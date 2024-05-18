@@ -8,6 +8,7 @@ use opencv::videoio;
 use std::sync::{Mutex, Arc};
 use opencv::core::Vector;
 use serde::{Deserialize, Serialize};
+use base64::decode;
 
 #[derive(Serialize, Deserialize)]
 struct ControlMessage {
@@ -47,10 +48,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
 }
 
 async fn ws_index(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+    // if let Err(e) = authenticate(&r) {
+    //     return Ok(e);
+    // }
     ws::start(WebSocketSession { state: data }, &r, stream)
 }
 
-async fn turn_camera_on(data: web::Data<AppState>) -> HttpResponse {
+async fn turn_camera_on(r: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+    if let Err(e) = authenticate(&r) {
+        return e;
+    }
     let mut camera_guard = data.camera.lock().unwrap();
     if camera_guard.is_none() {
         *camera_guard = Some(videoio::VideoCapture::new(0, videoio::CAP_V4L2).unwrap());
@@ -62,10 +69,37 @@ async fn turn_camera_on(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok().body("Camera turned on")
 }
 
-async fn turn_camera_off(data: web::Data<AppState>) -> HttpResponse {
+async fn turn_camera_off(r: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+    if let Err(e) = authenticate(&r) {
+        return e;
+    }
     let mut camera_guard = data.camera.lock().unwrap();
     *camera_guard = None;
     HttpResponse::Ok().body("Camera turned off")
+}
+
+fn authenticate(req: &HttpRequest) -> Result<(), HttpResponse> {
+    if let Some(auth_header) = req.headers().get("Authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str.starts_with("Basic ") {
+                let encoded = &auth_str[6..];
+                if let Ok(decoded) = decode(encoded) {
+                    if let Ok(decoded_str) = String::from_utf8(decoded) {
+                        let parts: Vec<&str> = decoded_str.split(':').collect();
+                        if parts.len() == 2 {
+                            let username = parts[0];
+                            let password = parts[1];
+                            // Replace these with your actual username and password
+                            if username == "admin" && password == "password" {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(HttpResponse::Unauthorized().body("Unauthorized"))
 }
 
 #[actix_web::main]
@@ -74,11 +108,14 @@ async fn main() -> std::io::Result<()> {
         camera: Arc::new(Mutex::new(None)),
     });
 
-    HttpServer::new(move || {
+    let server_addr = "127.0.0.1";
+    let server_port = 8080;
+
+    let app = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
             .allowed_methods(vec!["GET", "POST"])
-            .allowed_headers(vec!["Content-Type"])
+            .allowed_headers(vec!["Content-Type", "Authorization"])
             .max_age(3600);
 
         App::new()
@@ -88,7 +125,9 @@ async fn main() -> std::io::Result<()> {
             .route("/camera/on", web::post().to(turn_camera_on))
             .route("/camera/off", web::post().to(turn_camera_off))
     })
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await
+        .bind((server_addr, server_port))?
+        .run();
+
+    println!("Server running at http://{server_addr}:{server_port}/");
+    app.await
 }
