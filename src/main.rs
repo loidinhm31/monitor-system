@@ -117,7 +117,8 @@ async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppSta
     }
 }
 
-async fn get_list_of_eyes(data: web::Data<AppState>) -> HttpResponse {
+
+async fn get_system_info(data: web::Data<AppState>) -> HttpResponse {
     let io = match data.os_type.as_str() {
         "Linux" => videoio::CAP_V4L2,
         "Windows" => videoio::CAP_WINRT,
@@ -201,7 +202,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .route("/sensors/eyes/event", web::get().to(sensors_eyes_event_stream))
             .route("/sensors/eyes", web::post().to(turn_eyes_on_off))
-            .route("/sensors/eyes", web::get().to(get_list_of_eyes))
+            .route("/system", web::get().to(get_system_info))
     })
         .bind((server_addr, server_port))?
         .run();
