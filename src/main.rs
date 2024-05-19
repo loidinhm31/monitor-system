@@ -9,14 +9,41 @@ use opencv::core::Vector;
 use opencv::prelude::*;
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
+use sys_info;
 
 #[derive(Serialize, Deserialize)]
 struct ControlMessage {
     command: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct EyeInfo {
+    index: i32,
+    name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SystemInfo {
+    os_type: String,
+    os_release: String,
+    eyes: Vec<EyeInfo>,
+}
+
+#[derive(Deserialize)]
+struct EyeRequest {
+    action: String,
+    index: Option<i32>,
+}
+
 struct AppState {
-    eyes: Arc<Mutex<Option<videoio::VideoCapture>>>,
+    eyes: EyesState,
+    current_camera_index: Arc<Mutex<Option<i32>>>,
+    os_type: String,
+}
+
+struct EyesState {
+    eyes_io: Arc<Mutex<Option<videoio::VideoCapture>>>,
+    status: Arc<Mutex<bool>>,
 }
 
 fn eyes_stream(state: web::Data<AppState>) -> impl Stream<Item=Result<web::Bytes, Error>> {
@@ -26,10 +53,10 @@ fn eyes_stream(state: web::Data<AppState>) -> impl Stream<Item=Result<web::Bytes
     async_stream::stream! {
         loop {
             interval.tick().await;
-            let mut eyes_guard = state.eyes.lock().unwrap();
-            if let Some(ref mut eyes) = *eyes_guard {
+            let mut eyes_guard = state.eyes.eyes_io.lock().unwrap();
+            if let Some(ref mut eyes_io) = *eyes_guard {
                 let mut frame = Mat::default();
-                if eyes.read(&mut frame).is_ok() {
+                if eyes_io.read(&mut frame).is_ok() {
                     let mut buf = Vector::new();
                     if opencv::imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
                         yield Ok(web::Bytes::from(format!("data: {}\n\n", general_purpose::STANDARD.encode(&buf))));
@@ -51,28 +78,74 @@ async fn sensors_eyes_event_stream(data: web::Data<AppState>) -> Result<HttpResp
         .streaming(stream))
 }
 
-async fn turn_eyes_on(r: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
-    if let Err(e) = authenticate(&r) {
-        return e;
-    }
-    let mut eyes_guard = data.eyes.lock().unwrap();
-    if eyes_guard.is_none() {
-        *eyes_guard = Some(videoio::VideoCapture::new(2, videoio::CAP_ANY).unwrap());
-        if !eyes_guard.as_ref().unwrap().is_opened().unwrap() {
-            *eyes_guard = None;
-            return HttpResponse::InternalServerError().body("Unable to open eyes");
+async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
+    return if request.action == "on" {
+        let mut eyes_guard = data.eyes.eyes_io.lock().unwrap();
+
+        if *data.eyes.status.lock().unwrap() == true {
+            if eyes_guard.is_some() {
+                return HttpResponse::BadRequest().body("Turn off the current eyes before selecting a new one");
+            }
+            HttpResponse::BadRequest().body("Not valid status and state of eyes")
+        } else {
+            if eyes_guard.is_none() {
+                let camera_index = request.index.unwrap_or(0);
+
+                let io = match data.os_type.as_str() {
+                    "Linux" => videoio::CAP_V4L2,
+                    "Windows" => videoio::CAP_WINRT,
+                    "Darwin" => videoio::CAP_AVFOUNDATION,
+                    _ => videoio::CAP_ANY,
+                };
+
+                *eyes_guard = Some(videoio::VideoCapture::new(camera_index, io).unwrap());
+                if !eyes_guard.as_ref().unwrap().is_opened().unwrap() {
+                    *eyes_guard = None;
+                    return HttpResponse::InternalServerError().body("Unable to open eyes");
+                } else {
+                    *data.eyes.status.lock().unwrap() = true;
+                }
+                return HttpResponse::Ok().body("Eyes turned on");
+            }
+            HttpResponse::BadRequest().body("Wrong status of eyes")
         }
+    } else {
+        let mut eyes_guard = data.eyes.eyes_io.lock().unwrap();
+        *eyes_guard = None;
+        *data.eyes.status.lock().unwrap() = false;
+        HttpResponse::Ok().body("Eyes turned off")
     }
-    HttpResponse::Ok().body("eyes turned on")
 }
 
-async fn turn_eyes_off(r: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
-    if let Err(e) = authenticate(&r) {
-        return e;
+async fn get_list_of_eyes(data: web::Data<AppState>) -> HttpResponse {
+    let io = match data.os_type.as_str() {
+        "Linux" => videoio::CAP_V4L2,
+        "Windows" => videoio::CAP_WINRT,
+        "Darwin" => videoio::CAP_AVFOUNDATION,
+        _ => videoio::CAP_ANY,
+    };
+
+    let mut cameras = vec![];
+    for i in 0..10 {
+        if let Ok(mut cap) = videoio::VideoCapture::new(i, io) {
+            if cap.is_opened().unwrap() {
+                cameras.push(EyeInfo {
+                    index: i,
+                    name: format!("Camera {}", i),
+                });
+
+                cap.release().unwrap();
+            }
+        }
     }
-    let mut eyes_guard = data.eyes.lock().unwrap();
-    *eyes_guard = None;
-    HttpResponse::Ok().body("eyes turned off")
+
+    let system_info = SystemInfo {
+        os_type: data.os_type.clone(),
+        os_release: sys_info::os_release().unwrap_or_else(|_| "Unknown".to_string()),
+        eyes: cameras,
+    };
+
+    HttpResponse::Ok().json(system_info)
 }
 
 fn authenticate(req: &HttpRequest) -> Result<(), HttpResponse> {
@@ -101,12 +174,19 @@ fn authenticate(req: &HttpRequest) -> Result<(), HttpResponse> {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let os_type = sys_info::os_type().unwrap_or_else(|_| "Unknown".to_string());
+
     let eyes = web::Data::new(AppState {
-        eyes: Arc::new(Mutex::new(None)),
+        eyes: EyesState {
+            eyes_io: Arc::new(Mutex::new(None)),
+            status: Arc::new(Mutex::new(false)),
+        },
+        current_camera_index: Arc::new(Mutex::new(None)),
+        os_type,
     });
 
-    // let server_addr = "0.0.0.0";
-    let server_addr = "127.0.0.1";
+    let server_addr = "0.0.0.0";
+    // let server_addr = "127.0.0.1";
     let server_port = 8081;
 
     let app = HttpServer::new(move || {
@@ -120,8 +200,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(eyes.clone())
             .wrap(cors)
             .route("/sensors/eyes/event", web::get().to(sensors_eyes_event_stream))
-            .route("/sensors/eyes/on", web::post().to(turn_eyes_on))
-            .route("/sensors/eyes/off", web::post().to(turn_eyes_off))
+            .route("/sensors/eyes", web::post().to(turn_eyes_on_off))
+            .route("/sensors/eyes", web::get().to(get_list_of_eyes))
     })
         .bind((server_addr, server_port))?
         .run();

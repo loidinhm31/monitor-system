@@ -21,5 +21,6 @@ tokio-tungstenite = "0.21.0"
 bcrypt = "0.15.1"
 base64 = "0.22.1"
 async-stream = "0.3.5"
-http = "0.2.12"
+http = "1.1.0"
+sys-info = "0.9.1"
 
