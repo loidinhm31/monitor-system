@@ -4,7 +4,6 @@ use actix_cors::Cors;
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use base64::{Engine as _, engine::general_purpose};
 use futures_util::stream::Stream;
-use futures_util::StreamExt;
 use opencv::core::Vector;
 use opencv::prelude::*;
 use opencv::videoio;
@@ -89,23 +88,30 @@ async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppSta
             HttpResponse::BadRequest().body("Not valid status and state of eyes")
         } else {
             if eyes_guard.is_none() {
-                let camera_index = request.index.unwrap_or(0);
+                if request.index.is_some() {
+                    let camera_index = request.index.unwrap();
 
-                let io = match data.os_type.as_str() {
-                    "Linux" => videoio::CAP_V4L2,
-                    "Windows" => videoio::CAP_WINRT,
-                    "Darwin" => videoio::CAP_AVFOUNDATION,
-                    _ => videoio::CAP_ANY,
-                };
 
-                *eyes_guard = Some(videoio::VideoCapture::new(camera_index, io).unwrap());
-                if !eyes_guard.as_ref().unwrap().is_opened().unwrap() {
-                    *eyes_guard = None;
-                    return HttpResponse::InternalServerError().body("Unable to open eyes");
-                } else {
-                    *data.eyes.status.lock().unwrap() = true;
+                    if data.current_camera_index.lock().unwrap().is_none() {
+                        let io = match data.os_type.as_str() {
+                            "Linux" => videoio::CAP_V4L2,
+                            "Windows" => videoio::CAP_WINRT,
+                            "Darwin" => videoio::CAP_AVFOUNDATION,
+                            _ => videoio::CAP_ANY,
+                        };
+
+                        *eyes_guard = Some(videoio::VideoCapture::new(camera_index, io).unwrap());
+                        if !eyes_guard.as_ref().unwrap().is_opened().unwrap() {
+                            *eyes_guard = None;
+                            return HttpResponse::InternalServerError().body("Unable to open eyes");
+                        } else {
+                            *data.eyes.status.lock().unwrap() = true;
+                        }
+                        return HttpResponse::Ok().body("Eyes turned on");
+                    } else {
+                        println!("Running eyes index: {:?}", data.current_camera_index.lock().unwrap());
+                    }
                 }
-                return HttpResponse::Ok().body("Eyes turned on");
             }
             HttpResponse::BadRequest().body("Wrong status of eyes")
         }
@@ -114,7 +120,7 @@ async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppSta
         *eyes_guard = None;
         *data.eyes.status.lock().unwrap() = false;
         HttpResponse::Ok().body("Eyes turned off")
-    }
+    };
 }
 
 
@@ -207,6 +213,6 @@ async fn main() -> std::io::Result<()> {
         .bind((server_addr, server_port))?
         .run();
 
-    println!("Server running at http://{server_addr}:{server_port}/");
+    println!("Server running at http://{server_addr}:{server_port}");
     app.await
 }
