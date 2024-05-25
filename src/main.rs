@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
 
+use actix::{Actor, AsyncContext, StreamHandler};
 use actix_cors::Cors;
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
+use actix_web::web::Payload;
+use actix_web_actors::ws;
 use base64::{Engine as _, engine::general_purpose};
-use futures_util::stream::Stream;
 use opencv::core::Vector;
 use opencv::prelude::*;
 use opencv::videoio;
@@ -45,36 +47,37 @@ struct EyesState {
     status: Arc<Mutex<bool>>,
 }
 
-fn eyes_stream(state: web::Data<AppState>) -> impl Stream<Item=Result<web::Bytes, Error>> {
-    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
-    let state = state.clone();
 
-    async_stream::stream! {
-        loop {
-            interval.tick().await;
-            let mut eyes_guard = state.eyes.eyes_io.lock().unwrap();
-            if let Some(ref mut eyes_io) = *eyes_guard {
+struct WebSocketSession {
+    state: web::Data<AppState>,
+}
+
+impl Actor for WebSocketSession {
+    type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let state = self.state.clone();
+        ctx.run_interval(std::time::Duration::from_millis(100), move |_, ctx| {
+            let mut camera_guard = state.eyes.eyes_io.lock().unwrap();
+            if let Some(ref mut camera) = *camera_guard {
                 let mut frame = Mat::default();
-                if eyes_io.read(&mut frame).is_ok() {
+                if camera.read(&mut frame).is_ok() {
                     let mut buf = Vector::new();
                     if opencv::imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
-                        yield Ok(web::Bytes::from(format!("data: {}\n\n", general_purpose::STANDARD.encode(&buf))));
+                        ctx.binary(buf.to_vec());
                     }
                 }
             }
-        }
+        });
     }
 }
 
-async fn sensors_eyes_event_stream(data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    println!("Streaming eyes data...");
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession {
+    fn handle(&mut self, _: Result<ws::Message, ws::ProtocolError>, _: &mut Self::Context) {}
+}
 
-    let stream = eyes_stream(data);
-
-    Ok(HttpResponse::Ok()
-        .append_header(("Access-Control-Allow-Credentials", "true"))
-        .content_type("text/event-stream")
-        .streaming(stream))
+async fn sensors_eyes_event_web_socket(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+    ws::start(WebSocketSession { state: data }, &r, stream)
 }
 
 async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
@@ -206,7 +209,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(eyes.clone())
             .wrap(cors)
-            .route("/sensors/eyes/event", web::get().to(sensors_eyes_event_stream))
+            .route("/sensors/eyes/ws", web::get().to(sensors_eyes_event_web_socket))
             .route("/sensors/eyes", web::post().to(turn_eyes_on_off))
             .route("/system", web::get().to(get_system_info))
     })
