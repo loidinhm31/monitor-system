@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use actix::{Actor, AsyncContext, StreamHandler};
+use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
 use actix_cors::Cors;
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::web::Payload;
@@ -11,11 +11,6 @@ use opencv::prelude::*;
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
 use sys_info;
-
-#[derive(Serialize, Deserialize)]
-struct ControlMessage {
-    command: String,
-}
 
 #[derive(Serialize, Deserialize)]
 struct EyeInfo {
@@ -47,9 +42,9 @@ struct EyesState {
     status: Arc<Mutex<bool>>,
 }
 
-
 struct WebSocketSession {
     state: web::Data<AppState>,
+    authenticated: bool,
 }
 
 impl Actor for WebSocketSession {
@@ -57,14 +52,16 @@ impl Actor for WebSocketSession {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         let state = self.state.clone();
-        ctx.run_interval(std::time::Duration::from_millis(100), move |_, ctx| {
-            let mut camera_guard = state.eyes.eyes_io.lock().unwrap();
-            if let Some(ref mut camera) = *camera_guard {
-                let mut frame = Mat::default();
-                if camera.read(&mut frame).is_ok() {
-                    let mut buf = Vector::new();
-                    if opencv::imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
-                        ctx.binary(buf.to_vec());
+        ctx.run_interval(std::time::Duration::from_millis(100), move |act, ctx| {
+            if act.authenticated {
+                let mut camera_guard = state.eyes.eyes_io.lock().unwrap();
+                if let Some(ref mut camera) = *camera_guard {
+                    let mut frame = Mat::default();
+                    if camera.read(&mut frame).is_ok() {
+                        let mut buf = Vector::new();
+                        if opencv::imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
+                            ctx.binary(buf.to_vec());
+                        }
                     }
                 }
             }
@@ -73,11 +70,36 @@ impl Actor for WebSocketSession {
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession {
-    fn handle(&mut self, _: Result<ws::Message, ws::ProtocolError>, _: &mut Self::Context) {}
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        println!("Message: {:?}", msg);
+        match msg {
+            Ok(ws::Message::Text(text)) => {
+                if !self.authenticated {
+                    if authenticate_basic(&text).is_ok() {
+                        self.authenticated = true;
+                        ctx.text("Authenticated");
+                    } else {
+                        ctx.text("Unauthorized");
+                        ctx.stop();
+                    }
+                } else {
+                    // Handle other messages after authentication
+                }
+            }
+            Ok(ws::Message::Binary(bin)) => {
+                // Handle binary messages if necessary
+            }
+            Ok(ws::Message::Close(reason)) => {
+                ctx.close(reason);
+                ctx.stop();
+            }
+            _ => (),
+        }
+    }
 }
 
 async fn sensors_eyes_event_web_socket(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    ws::start(WebSocketSession { state: data }, &r, stream)
+    ws::start(WebSocketSession { state: data, authenticated: false }, &r, stream)
 }
 
 async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
@@ -93,7 +115,6 @@ async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppSta
             if eyes_guard.is_none() {
                 if request.index.is_some() {
                     let camera_index = request.index.unwrap();
-
 
                     if data.current_camera_index.lock().unwrap().is_none() {
                         let io = match data.os_type.as_str() {
@@ -158,22 +179,18 @@ async fn get_system_info(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok().json(system_info)
 }
 
-fn authenticate(req: &HttpRequest) -> Result<(), HttpResponse> {
-    if let Some(auth_header) = req.headers().get("Authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str.starts_with("Basic ") {
-                let encoded = &auth_str[6..];
-                if let Ok(decoded) = general_purpose::STANDARD.decode(&encoded) {
-                    if let Ok(decoded_str) = String::from_utf8(decoded) {
-                        let parts: Vec<&str> = decoded_str.split(':').collect();
-                        if parts.len() == 2 {
-                            let username = parts[0];
-                            let password = parts[1];
-                            // Replace these with your actual username and password
-                            if username == "admin" && password == "password" {
-                                return Ok(());
-                            }
-                        }
+fn authenticate_basic(auth_str: &str) -> Result<(), HttpResponse> {
+    if auth_str.starts_with("Basic ") {
+        let encoded = &auth_str[6..];
+        if let Ok(decoded) = general_purpose::STANDARD.decode(&encoded) {
+            if let Ok(decoded_str) = String::from_utf8(decoded) {
+                let parts: Vec<&str> = decoded_str.split(':').collect();
+                if parts.len() == 2 {
+                    let username = parts[0];
+                    let password = parts[1];
+                    // Replace these with your actual username and password
+                    if username == "admin" && password == "password" {
+                        return Ok(());
                     }
                 }
             }
