@@ -1,18 +1,19 @@
 use std::sync::{Arc, Mutex};
-use actix::{Actor, StreamHandler, AsyncContext, Message, Handler, ActorContext};
+
+use actix::{Actor, ActorContext, AsyncContext, Handler, Message, StreamHandler};
 use actix_cors::Cors;
-use actix_web::{App, HttpServer, HttpResponse, web, Error, HttpRequest};
+use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::web::Payload;
 use actix_web_actors::ws;
 use base64::{Engine as _, engine::general_purpose};
+use cpal::{SampleFormat, Stream};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, SampleRate, Stream};
+use opencv::core::Vector;
+use opencv::imgcodecs;
 use opencv::prelude::*;
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
 use sys_info;
-use opencv::core::Vector;
-use opencv::imgcodecs;
 
 #[derive(Serialize, Deserialize)]
 struct EyeInfo {
@@ -48,6 +49,7 @@ struct WebSocketSession {
     state: web::Data<AppState>,
     authenticated: bool,
     audio_stream: Option<Stream>,
+    audio_streaming: bool,
 }
 
 struct AudioData(Vec<u8>);
@@ -83,7 +85,11 @@ impl Actor for WebSocketSession {
                 }
             }
         });
+    }
+}
 
+impl WebSocketSession {
+    fn start_audio_stream(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
         let host = cpal::default_host();
         let audio_input_device = host.default_input_device().expect("No input device available");
         let audio_input_config = audio_input_device.default_input_config().unwrap();
@@ -103,8 +109,16 @@ impl Actor for WebSocketSession {
                 ).unwrap();
                 stream.play().unwrap();
                 self.audio_stream = Some(stream);
+                self.audio_streaming = true;
             },
             _ => panic!("Unsupported sample format"),
+        }
+    }
+
+    fn stop_audio_stream(&mut self) {
+        if let Some(stream) = self.audio_stream.take() {
+            stream.pause().unwrap();
+            self.audio_streaming = false;
         }
     }
 }
@@ -122,12 +136,27 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                         ctx.text("Unauthorized");
                         ctx.stop();
                     }
+                } else {
+                    match text.to_string().as_str() {
+                        "start_audio" => {
+                            if !self.audio_streaming {
+                                self.start_audio_stream(ctx);
+                            }
+                        }
+                        "stop_audio" => {
+                            if self.audio_streaming {
+                                self.stop_audio_stream();
+                            }
+                        }
+                        _ => (),
+                    }
                 }
             }
             Ok(ws::Message::Binary(bin)) => {
                 // Handle binary messages if necessary
             }
             Ok(ws::Message::Close(reason)) => {
+                self.stop_audio_stream();
                 ctx.close(reason);
                 ctx.stop();
             }
@@ -135,9 +164,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
         }
     }
 }
-
 async fn sensors_eyes_event_web_socket(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    ws::start(WebSocketSession { state: data, authenticated: false, audio_stream: None }, &r, stream)
+    ws::start(WebSocketSession { state: data, authenticated: false, audio_stream: None, audio_streaming: false }, &r, stream)
 }
 
 async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
