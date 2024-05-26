@@ -1,16 +1,18 @@
 use std::sync::{Arc, Mutex};
-
-use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
+use actix::{Actor, StreamHandler, AsyncContext, Message, Handler, ActorContext};
 use actix_cors::Cors;
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
+use actix_web::{App, HttpServer, HttpResponse, web, Error, HttpRequest};
 use actix_web::web::Payload;
 use actix_web_actors::ws;
 use base64::{Engine as _, engine::general_purpose};
-use opencv::core::Vector;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{SampleFormat, SampleRate, Stream};
 use opencv::prelude::*;
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
 use sys_info;
+use opencv::core::Vector;
+use opencv::imgcodecs;
 
 #[derive(Serialize, Deserialize)]
 struct EyeInfo {
@@ -45,6 +47,21 @@ struct EyesState {
 struct WebSocketSession {
     state: web::Data<AppState>,
     authenticated: bool,
+    audio_stream: Option<Stream>,
+}
+
+struct AudioData(Vec<u8>);
+
+impl Message for AudioData {
+    type Result = ();
+}
+
+impl Handler<AudioData> for WebSocketSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: AudioData, ctx: &mut Self::Context) {
+        ctx.binary(msg.0);
+    }
 }
 
 impl Actor for WebSocketSession {
@@ -59,13 +76,36 @@ impl Actor for WebSocketSession {
                     let mut frame = Mat::default();
                     if camera.read(&mut frame).is_ok() {
                         let mut buf = Vector::new();
-                        if opencv::imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
+                        if imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
                             ctx.binary(buf.to_vec());
                         }
                     }
                 }
             }
         });
+
+        let host = cpal::default_host();
+        let audio_input_device = host.default_input_device().expect("No input device available");
+        let audio_input_config = audio_input_device.default_input_config().unwrap();
+
+        match audio_input_config.sample_format() {
+            SampleFormat::F32 => {
+                let addr = ctx.address();
+                let stream = audio_input_device.build_input_stream(
+                    &audio_input_config.into(),
+                    move |data: &[f32], _| {
+                        let audio_data = data.iter().map(|&sample| sample.to_ne_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                        addr.do_send(AudioData(audio_data));
+                    },
+                    |err| {
+                        eprintln!("Error occurred on audio input stream: {:?}", err);
+                    }
+                ).unwrap();
+                stream.play().unwrap();
+                self.audio_stream = Some(stream);
+            },
+            _ => panic!("Unsupported sample format"),
+        }
     }
 }
 
@@ -82,8 +122,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                         ctx.text("Unauthorized");
                         ctx.stop();
                     }
-                } else {
-                    // Handle other messages after authentication
                 }
             }
             Ok(ws::Message::Binary(bin)) => {
@@ -99,7 +137,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
 }
 
 async fn sensors_eyes_event_web_socket(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    ws::start(WebSocketSession { state: data, authenticated: false }, &r, stream)
+    ws::start(WebSocketSession { state: data, authenticated: false, audio_stream: None }, &r, stream)
 }
 
 async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
@@ -133,20 +171,30 @@ async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppSta
                         }
                         return HttpResponse::Ok().body("Eyes turned on");
                     } else {
-                        println!("Running eyes index: {:?}", data.current_camera_index.lock().unwrap());
+                        println!("Running eyes already selected. You need to stop the current one.");
+                        HttpResponse::BadRequest().body("Eyes are already running")
                     }
+                } else {
+                    HttpResponse::BadRequest().body("Select the right eyes number")
                 }
+            } else {
+                HttpResponse::InternalServerError().body("Eyes are not turned on")
             }
-            HttpResponse::BadRequest().body("Wrong status of eyes")
         }
-    } else {
+    } else if request.action == "off" {
         let mut eyes_guard = data.eyes.eyes_io.lock().unwrap();
-        *eyes_guard = None;
         *data.eyes.status.lock().unwrap() = false;
-        HttpResponse::Ok().body("Eyes turned off")
+
+        if eyes_guard.is_some() {
+            eyes_guard.as_mut().unwrap().release().unwrap();
+            *eyes_guard = None;
+            return HttpResponse::Ok().body("Eyes turned off");
+        }
+        return HttpResponse::InternalServerError().body("Eyes are not turned off correctly");
+    } else {
+        HttpResponse::BadRequest().body("Invalid action")
     };
 }
-
 
 async fn get_system_info(data: web::Data<AppState>) -> HttpResponse {
     let io = match data.os_type.as_str() {
@@ -201,13 +249,14 @@ fn authenticate_basic(auth_str: &str) -> Result<(), HttpResponse> {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let os_type = sys_info::os_type().unwrap_or_else(|_| "Unknown".to_string());
+    let os_type = sys_info::os_type().unwrap();
+    let eyes = EyesState {
+        eyes_io: Arc::new(Mutex::new(None)),
+        status: Arc::new(Mutex::new(false)),
+    };
 
-    let eyes = web::Data::new(AppState {
-        eyes: EyesState {
-            eyes_io: Arc::new(Mutex::new(None)),
-            status: Arc::new(Mutex::new(false)),
-        },
+    let data = web::Data::new(AppState {
+        eyes,
         current_camera_index: Arc::new(Mutex::new(None)),
         os_type,
     });
@@ -224,8 +273,8 @@ async fn main() -> std::io::Result<()> {
             .max_age(3600);
 
         App::new()
-            .app_data(eyes.clone())
             .wrap(cors)
+            .app_data(data.clone())
             .route("/sensors/eyes/ws", web::get().to(sensors_eyes_event_web_socket))
             .route("/sensors/eyes", web::post().to(turn_eyes_on_off))
             .route("/system", web::get().to(get_system_info))
