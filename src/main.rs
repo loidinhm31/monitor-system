@@ -5,34 +5,21 @@ use actix_cors::Cors;
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::web::Payload;
 use actix_web_actors::ws;
-use base64::{Engine as _, engine::general_purpose};
-use cpal::{SampleFormat, Stream};
+use base64::Engine as _;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use opencv::core::Vector;
-use opencv::imgcodecs;
 use opencv::prelude::*;
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
 use sys_info;
 
-#[derive(Serialize, Deserialize)]
-struct EyeInfo {
-    index: i32,
-    name: String,
-}
+use crate::models::{EyeInfo, EyeRequest, EyesState, SystemInfo};
+use crate::websocket::{AudioWebSocketSession, WebSocketSession};
 
-#[derive(Serialize, Deserialize)]
-struct SystemInfo {
-    os_type: String,
-    os_release: String,
-    eyes: Vec<EyeInfo>,
-}
-
-#[derive(Deserialize)]
-struct EyeRequest {
-    action: String,
-    index: Option<i32>,
-}
+mod auth;
+mod camera;
+mod audio;
+mod models;
+mod websocket;
 
 struct AppState {
     eyes: EyesState,
@@ -40,132 +27,9 @@ struct AppState {
     os_type: String,
 }
 
-struct EyesState {
-    eyes_io: Arc<Mutex<Option<videoio::VideoCapture>>>,
-    status: Arc<Mutex<bool>>,
-}
 
-struct WebSocketSession {
-    state: web::Data<AppState>,
-    authenticated: bool,
-    audio_stream: Option<Stream>,
-    audio_streaming: bool,
-}
-
-struct AudioData(Vec<u8>);
-
-impl Message for AudioData {
-    type Result = ();
-}
-
-impl Handler<AudioData> for WebSocketSession {
-    type Result = ();
-
-    fn handle(&mut self, msg: AudioData, ctx: &mut Self::Context) {
-        ctx.binary(msg.0);
-    }
-}
-
-impl Actor for WebSocketSession {
-    type Context = ws::WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        let state = self.state.clone();
-        ctx.run_interval(std::time::Duration::from_millis(100), move |act, ctx| {
-            if act.authenticated {
-                let mut camera_guard = state.eyes.eyes_io.lock().unwrap();
-                if let Some(ref mut camera) = *camera_guard {
-                    let mut frame = Mat::default();
-                    if camera.read(&mut frame).is_ok() {
-                        let mut buf = Vector::new();
-                        if imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new()).is_ok() {
-                            ctx.binary(buf.to_vec());
-                        }
-                    }
-                }
-            }
-        });
-    }
-}
-
-impl WebSocketSession {
-    fn start_audio_stream(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
-        let host = cpal::default_host();
-        let audio_input_device = host.default_input_device().expect("No input device available");
-        let audio_input_config = audio_input_device.default_input_config().unwrap();
-
-        match audio_input_config.sample_format() {
-            SampleFormat::F32 => {
-                let addr = ctx.address();
-                let stream = audio_input_device.build_input_stream(
-                    &audio_input_config.into(),
-                    move |data: &[f32], _| {
-                        let audio_data = data.iter().map(|&sample| sample.to_ne_bytes().to_vec()).flatten().collect::<Vec<_>>();
-                        addr.do_send(AudioData(audio_data));
-                    },
-                    |err| {
-                        eprintln!("Error occurred on audio input stream: {:?}", err);
-                    }
-                ).unwrap();
-                stream.play().unwrap();
-                self.audio_stream = Some(stream);
-                self.audio_streaming = true;
-            },
-            _ => panic!("Unsupported sample format"),
-        }
-    }
-
-    fn stop_audio_stream(&mut self) {
-        if let Some(stream) = self.audio_stream.take() {
-            stream.pause().unwrap();
-            self.audio_streaming = false;
-        }
-    }
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        println!("Message: {:?}", msg);
-        match msg {
-            Ok(ws::Message::Text(text)) => {
-                if !self.authenticated {
-                    if authenticate_basic(&text).is_ok() {
-                        self.authenticated = true;
-                        ctx.text("Authenticated");
-                    } else {
-                        ctx.text("Unauthorized");
-                        ctx.stop();
-                    }
-                } else {
-                    match text.to_string().as_str() {
-                        "start_audio" => {
-                            if !self.audio_streaming {
-                                self.start_audio_stream(ctx);
-                            }
-                        }
-                        "stop_audio" => {
-                            if self.audio_streaming {
-                                self.stop_audio_stream();
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            Ok(ws::Message::Binary(bin)) => {
-                // Handle binary messages if necessary
-            }
-            Ok(ws::Message::Close(reason)) => {
-                self.stop_audio_stream();
-                ctx.close(reason);
-                ctx.stop();
-            }
-            _ => (),
-        }
-    }
-}
 async fn sensors_eyes_event_web_socket(r: HttpRequest, stream: Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    ws::start(WebSocketSession { state: data, authenticated: false, audio_stream: None, audio_streaming: false }, &r, stream)
+    ws::start(WebSocketSession { state: data, authenticated: false }, &r, stream)
 }
 
 async fn turn_eyes_on_off(request: web::Json<EyeRequest>, data: web::Data<AppState>) -> HttpResponse {
@@ -255,25 +119,10 @@ async fn get_system_info(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok().json(system_info)
 }
 
-fn authenticate_basic(auth_str: &str) -> Result<(), HttpResponse> {
-    if auth_str.starts_with("Basic ") {
-        let encoded = &auth_str[6..];
-        if let Ok(decoded) = general_purpose::STANDARD.decode(&encoded) {
-            if let Ok(decoded_str) = String::from_utf8(decoded) {
-                let parts: Vec<&str> = decoded_str.split(':').collect();
-                if parts.len() == 2 {
-                    let username = parts[0];
-                    let password = parts[1];
-                    // Replace these with your actual username and password
-                    if username == "admin" && password == "password" {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-    }
-    Err(HttpResponse::Unauthorized().body("Unauthorized"))
+async fn audio_event_web_socket(r: HttpRequest, stream: Payload) -> Result<HttpResponse, Error> {
+    ws::start(AudioWebSocketSession { authenticated: false, audio_stream: None, audio_streaming: false }, &r, stream)
 }
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -304,6 +153,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(data.clone())
             .route("/sensors/eyes/ws", web::get().to(sensors_eyes_event_web_socket))
+            .route("/sensors/ears/ws", web::get().to(audio_event_web_socket))
             .route("/sensors/eyes", web::post().to(turn_eyes_on_off))
             .route("/system", web::get().to(get_system_info))
     })
