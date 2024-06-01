@@ -71,6 +71,8 @@ impl AudioWebSocketSession {
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for AudioWebSocketSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        println!("Audio Message: {:?}", msg);
+
         match msg {
             Ok(ws::Message::Text(text)) => {
                 if !self.authenticated {

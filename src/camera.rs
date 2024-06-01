@@ -30,7 +30,7 @@ impl Actor for WebSocketSession {
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        println!("Message: {:?}", msg);
+        println!("Video Message: {:?}", msg);
         match msg {
             Ok(ws::Message::Text(text)) => {
                 if !self.authenticated {
