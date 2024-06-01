@@ -14,6 +14,7 @@ pub struct AudioWebSocketSession {
     pub authenticated: bool,
     pub audio_stream: Option<Stream>,
     pub audio_streaming: bool,
+    pub audio_buffer: Arc<Mutex<Vec<u8>>>,
 }
 
 

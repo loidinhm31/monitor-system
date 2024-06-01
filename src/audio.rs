@@ -12,7 +12,6 @@ impl Message for AudioData {
     type Result = ();
 }
 
-
 impl Actor for AudioWebSocketSession {
     type Context = ws::WebsocketContext<Self>;
 }
@@ -30,6 +29,8 @@ impl Handler<AudioData> for AudioWebSocketSession {
 
 impl AudioWebSocketSession {
     fn start_audio_stream(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
+        let audio_buffer = self.audio_buffer.clone();
+
         let host = cpal::default_host();
         let audio_input_device = host.default_input_device().expect("No input device available");
         let audio_input_config = audio_input_device.default_input_config().unwrap();
@@ -41,7 +42,11 @@ impl AudioWebSocketSession {
                     &audio_input_config.into(),
                     move |data: &[f32], _| {
                         let audio_data = data.iter().map(|&sample| sample.to_ne_bytes().to_vec()).flatten().collect::<Vec<_>>();
-                        addr.do_send(AudioData(audio_data));
+                        let mut buffer = audio_buffer.lock().unwrap();
+                        buffer.extend(audio_data);
+                        if buffer.len() >= 1024 {
+                            addr.do_send(AudioData(buffer.split_off(0)));
+                        }
                     },
                     |err| {
                         eprintln!("Error occurred on audio input stream: {:?}", err);

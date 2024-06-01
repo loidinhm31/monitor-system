@@ -120,7 +120,7 @@ async fn get_system_info(data: web::Data<AppState>) -> HttpResponse {
 }
 
 async fn audio_event_web_socket(r: HttpRequest, stream: Payload) -> Result<HttpResponse, Error> {
-    ws::start(AudioWebSocketSession { authenticated: false, audio_stream: None, audio_streaming: false }, &r, stream)
+    ws::start(AudioWebSocketSession { authenticated: false, audio_stream: None, audio_streaming: false, audio_buffer: Arc::new(Mutex::new(vec![])) }, &r, stream)
 }
 
 
