@@ -1,3 +1,4 @@
+use std::time::Duration;
 use actix::{Actor, ActorContext, AsyncContext, Handler, Message, StreamHandler};
 use actix_web_actors::ws;
 use cpal::{SampleFormat, Stream};
@@ -50,7 +51,8 @@ impl AudioWebSocketSession {
                     },
                     |err| {
                         eprintln!("Error occurred on audio input stream: {:?}", err);
-                    }
+                    },
+                    Some(Duration::from_millis(10000))
                 ).unwrap();
                 stream.play().unwrap();
                 self.audio_stream = Some(stream);

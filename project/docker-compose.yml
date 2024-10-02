@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  monitor-system:
+    build:
+      context: ./../monitor-system-service
+      dockerfile: ./../project/docker/Dockerfile
+    ports:
+      - "8081:8081"
+    devices:
+      - "/dev/video0:/dev/video0" # Map the host camera device to the container
+      - "/dev/video1:/dev/video1"
+    volumes:
+      - /run/user/1000/pulse:/run/user/1000/pulse  # Optional: PulseAudio
+    privileged: true
+    network_mode: "host"  # Optional: Needed for PulseAudio
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1

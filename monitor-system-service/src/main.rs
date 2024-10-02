@@ -152,6 +152,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .app_data(data.clone())
+            .route("/healthz", web::get().to(|| async { HttpResponse::Ok().body("Up") }))
             .route("/sensors/eyes/ws", web::get().to(sensors_eyes_event_web_socket))
             .route("/sensors/ears/ws", web::get().to(audio_event_web_socket))
             .route("/sensors/eyes", web::post().to(turn_eyes_on_off))

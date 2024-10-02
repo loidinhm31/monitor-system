@@ -1,0 +1,26 @@
+FROM ubuntu:22.04
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install necessary runtime dependencies (for example, libopencv if used)
+RUN apt-get update && apt-get install -y \
+    locales \
+    libopencv-dev \
+    libclang-dev \
+    clang \
+    libstdc++-12-dev \
+    libasound2-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
+ENV LANG en_US.utf8
+
+# Copy the compiled binary from the builder stage
+COPY /target/release/monitor-system /app/monitor-system
+
+# Expose the port
+EXPOSE 8081
+
+# Set the startup command to run your binary
+CMD ["/app/monitor-system"]
