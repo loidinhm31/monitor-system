@@ -1,10 +1,10 @@
-use std::time::Duration;
-use actix::{Actor, ActorContext, AsyncContext, Handler, Message, StreamHandler};
-use actix_web_actors::ws;
-use cpal::{SampleFormat, Stream};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crate::auth;
 use crate::websocket::AudioWebSocketSession;
+use actix::{Actor, ActorContext, AsyncContext, Handler, Message, StreamHandler};
+use actix_web_actors::ws;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat;
+use std::time::Duration;
 
 pub struct AudioData(pub Vec<u8>);
 

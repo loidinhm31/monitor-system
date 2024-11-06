@@ -1,15 +1,11 @@
 use std::sync::{Arc, Mutex};
 
-use actix::{Actor, ActorContext, AsyncContext, Handler, Message, StreamHandler};
 use actix_cors::Cors;
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::web::Payload;
+use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
-use base64::Engine as _;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use opencv::prelude::*;
 use opencv::videoio;
-use serde::{Deserialize, Serialize};
 use sys_info;
 
 use crate::models::{EyeInfo, EyeRequest, EyesState, SystemInfo};

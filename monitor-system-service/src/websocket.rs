@@ -1,7 +1,6 @@
-use std::sync::{Arc, Mutex};
 use actix_web::web;
 use cpal::Stream;
-use cpal::traits::DeviceTrait;
+use std::sync::{Arc, Mutex};
 
 use crate::AppState;
 
