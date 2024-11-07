@@ -1,10 +1,8 @@
-version: "3.8"
-
 services:
   monitor-system:
     build:
       context: ./../monitor-system-service
-      dockerfile: ./../project/docker/Dockerfile
+      dockerfile:  ./../project/docker/${DOCKERFILE:-Dockerfile.amd64}  # Default to amd64 if not specified
     ports:
       - "8081:8081"
     devices:

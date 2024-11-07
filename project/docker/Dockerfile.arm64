@@ -1,0 +1,50 @@
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Prevent interactive prompts during package installation
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install necessary runtime dependencies
+
+RUN apt-get update && apt-get install -y \
+    locales \
+    # OpenCV and its dependencies
+    libopencv-dev \
+    libopencv-core-dev \
+    libopencv-videoio-dev \
+    libopencv-imgproc-dev \
+    libopencv-imgcodecs-dev \
+    # Development tools
+    libclang-dev \
+    clang \
+    # Additional system libraries
+    libstdc++6 \
+    libasound2-dev \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgl1 \
+    # Add runtime libraries
+    python3-opencv \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
+
+ENV LANG en_US.utf8
+
+# Set library path for ARM64 architecture
+ENV LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}
+
+# Copy the compiled binary from the builder stage
+COPY target/release/aarch64-unknown-linux-gnu/monitor-system /app/monitor-system
+
+# Make the binary executable
+RUN chmod +x /app/monitor-system
+
+# Expose the port
+EXPOSE 8081
+
+# Set the startup command to run your binary
+CMD ["/app/monitor-system"]

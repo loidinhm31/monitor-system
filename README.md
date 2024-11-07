@@ -4,10 +4,10 @@ sudo chmod 777 /dev/video0
 
 cargo install cross
 
-apt-get install libclang-dev
-apt-get install libopencv-dev
-apt-get install clang
-apt-get install libstdc++-12-dev
+sudo apt-get install libclang-dev
+sudo apt-get install libopencv-dev
+sudo apt-get install clang
+sudo apt-get install libstdc++-12-dev
 
 sudo apt-get install -y libasound2-dev
 
