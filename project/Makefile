@@ -8,7 +8,7 @@ ARM64_TAG = bookworm-arm64
 
 # Dockerfile paths
 AMD64_DOCKERFILE = Dockerfile.amd64
-ARM64_DOCKERFILE = Dockerfile.rpi
+ARM64_DOCKERFILE = Dockerfile.arm64
 
 # Architecture-specific cargo target
 ifeq ($(PLATFORM),arm64)
