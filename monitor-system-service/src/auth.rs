@@ -1,8 +1,7 @@
-use actix_web::HttpResponse;
-use base64::Engine;
 use base64::engine::general_purpose;
+use base64::Engine;
 
-pub(crate) fn authenticate_basic(auth_str: &str) -> Result<(), HttpResponse> {
+pub fn authenticate_basic(auth_str: &str) -> Result<(), String> {
     if auth_str.starts_with("Basic ") {
         let encoded = &auth_str[6..];
         if let Ok(decoded) = general_purpose::STANDARD.decode(&encoded) {
@@ -19,5 +18,5 @@ pub(crate) fn authenticate_basic(auth_str: &str) -> Result<(), HttpResponse> {
             }
         }
     }
-    Err(HttpResponse::Unauthorized().body("Unauthorized"))
+    Err("Unauthorized".to_string())
 }

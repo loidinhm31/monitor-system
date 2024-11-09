@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
 use opencv::videoio;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Serialize, Deserialize)]
 pub struct EyeInfo {
@@ -9,8 +10,8 @@ pub struct EyeInfo {
 }
 
 pub struct EyesState {
-    pub eyes_io: Arc<Mutex<Option<videoio::VideoCapture>>>,
-    pub status: Arc<Mutex<bool>>,
+    pub eyes_io: Arc<TokioMutex<Option<videoio::VideoCapture>>>,
+    pub status: Arc<TokioMutex<bool>>,
 }
 
 
