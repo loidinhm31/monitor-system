@@ -11,19 +11,11 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
-mod models;
+mod r#trait;
 mod websocket;
 
-use crate::models::{EyeInfo, EyesState, SystemInfo};
+use crate::r#trait::{AppState, EyeInfo, EyesState, SystemInfo, VideoState};
 use crate::websocket::{handle_audio_socket, handle_video_socket};
-
-
-#[derive(Clone)]
-pub struct AppState {
-    eyes: Arc<EyesState>,
-    current_camera_index: Arc<TokioMutex<Option<i32>>>,
-    os_type: String,
-}
 
 
 async fn healthcheck() -> &'static str {
@@ -93,6 +85,7 @@ async fn main() {
         eyes: Arc::new(eyes),
         current_camera_index: Arc::new(TokioMutex::new(None)),
         os_type,
+        video_state: Arc::new(VideoState::new()),
     };
 
     let cors = CorsLayer::new()

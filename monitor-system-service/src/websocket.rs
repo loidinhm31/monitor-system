@@ -1,141 +1,121 @@
-use crate::{auth::authenticate_basic, AppState};
+use crate::auth::authenticate_basic;
+use crate::r#trait::{AppState, AudioCommand, AudioState, AudioStreamHandle, ControlMessage, VideoCommand};
 use axum::extract::ws::{Message, WebSocket};
-use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, SampleFormat, Stream};
-use opencv::{core::{Mat, Vector}, imgcodecs, prelude::*, videoio};
-use serde::Deserialize;
-use std::sync::{Arc, Mutex};
+use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, SampleFormat};
 use futures::{SinkExt, StreamExt};
-use tokio::sync::{mpsc, watch, Mutex as TokioMutex};
+use opencv::{core::{Mat, Vector}, imgcodecs, prelude::*, videoio};
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, Mutex as TokioMutex};
+use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
-
 const BUFFER_SIZE: usize = 1024;
-
-#[derive(Debug)]
-enum VideoCommand {
-    Frame(Vec<u8>),
-    Error(String),
-}
-
-#[derive(Debug, Deserialize)]
-struct ControlMessage {
-    #[serde(rename = "type")]
-    message_type: String,
-    action: String,
-    index: Option<i32>,
-}
-
-
-#[derive(Debug)]
-enum AudioCommand {
-    Data(Vec<u8>),
-    Text(String),
-}
-
-struct AudioStreamHandle {
-    stream: Arc<Stream>,
-    stop_signal: Arc<Mutex<bool>>,
-}
-
-unsafe impl Send for AudioStreamHandle {}
-
-
-// Audio state that can be shared between threads
-struct AudioState {
-    is_authenticated: bool,
-}
-
-impl AudioState {
-    fn new() -> Self {
-        Self {
-            is_authenticated: false,
-        }
-    }
-}
 
 pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
     println!("New video websocket connection established");
     let (mut sender, mut receiver) = socket.split();
-    // Use a smaller channel size to prevent frame buildup
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<VideoCommand>(10);
-    let (stream_tx, stream_rx) = watch::channel((false, None::<i32>));
 
-    let mut is_authenticated = false;
-    let mut video_task = None;
+    let video_state = state.video_state.clone();
+    let mut broadcast_rx = video_state.broadcast_tx.subscribe();
 
-    // Optimize sender task to handle backpressure
+    let (tx, mut rx) = mpsc::channel::<VideoCommand>(10);
+    let tx = Arc::new(tx); // Wrap in Arc for sharing
+
+    let client_id = uuid::Uuid::new_v4().to_string();
+    let client_id_for_sender = client_id.clone();
+    let mut video_task: Option<JoinHandle<()>> = None;
+    let is_authenticated = Arc::new(TokioMutex::new(false));
+    let is_authenticated_sender = is_authenticated.clone();
+    let is_viewing = Arc::new(TokioMutex::new(false));
+    let is_viewing_sender = is_viewing.clone();
+
+    // Handle sending messages to client
     let sender_task = tokio::spawn(async move {
-        println!("Sender task started");
-        while let Some(cmd) = rx.recv().await {
-            let msg = match cmd {
-                VideoCommand::Frame(data) => Message::Binary(data),
-                VideoCommand::Error(err) => {
-                    println!("Sending error: {}", err);
-                    Message::Text(err)
-                },
-            };
+        println!("Sender task started for client {}", client_id_for_sender);
+        loop {
+            tokio::select! {
+                Some(cmd) = rx.recv() => {
+                    let msg = match cmd {
+                        VideoCommand::Frame(data) => Message::Binary(data),
+                        VideoCommand::Error(err) => {
+                            println!("Sending error to client {}: {}", client_id_for_sender, err);
+                            Message::Text(err)
+                        },
+                    };
 
-            if sender.send(msg).await.is_err() {
-                println!("Failed to send message, breaking sender task");
-                break;
+                    if sender.send(msg).await.is_err() {
+                        println!("Failed to send message to client {}, breaking sender task", client_id_for_sender);
+                        break;
+                    }
+                }
+                Ok(cmd) = broadcast_rx.recv() => {
+                    let is_auth = *is_authenticated_sender.lock().await;
+                    let is_view = *is_viewing_sender.lock().await;
+                    if !is_auth || !is_view {
+                        continue;
+                    }
+
+                    let msg = match cmd {
+                        VideoCommand::Frame(data) => Message::Binary(data),
+                        VideoCommand::Error(err) => Message::Text(err),
+                    };
+
+                    if sender.send(msg).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
-        println!("Sender task ended");
+        println!("Sender task ended for client {}", client_id_for_sender);
     });
 
-    println!("Starting message handling loop");
+    let tx_for_handler = tx.clone(); // Clone for message handling loop
+    println!("Starting message handling loop for client {}", client_id);
     while let Some(Ok(msg)) = receiver.next().await {
         match msg {
             Message::Text(text) => {
-                if !is_authenticated {
-                    println!("Attempting authentication");
+                let mut is_auth = is_authenticated.lock().await;
+                if !*is_auth {
+                    println!("Attempting authentication for client {}", client_id);
                     if authenticate_basic(&text).is_ok() {
-                        is_authenticated = true;
-                        println!("Authentication successful");
+                        *is_auth = true;
+                        video_state.authenticated_clients.lock().await.insert(client_id.clone());
+                        println!("Authentication successful for client {}", client_id);
+                        let _ = tx_for_handler.send(VideoCommand::Error("Authenticated".to_string())).await;
+                    } else {
+                        println!("Authentication failed for client {}", client_id);
+                        let _ = tx_for_handler.send(VideoCommand::Error("Unauthorized".to_string())).await;
+                        break;
+                    }
+                    continue;
+                }
+                drop(is_auth);
 
-                        let stream_tx_clone = stream_tx.clone();
-                        video_task = Some({
-                            let tx = tx.clone();
-                            let state = state.clone();
-                            let stream_rx = stream_rx.clone();
+                if let Ok(control_msg) = serde_json::from_str::<ControlMessage>(&text) {
+                    if control_msg.message_type == "control" {
+                        match control_msg.action.as_str() {
+                            "on" => {
+                                println!("Received ON command with index {:?} from client {}", control_msg.index, client_id);
+                                if let Some(index) = control_msg.index {
+                                    let mut viewing_clients = video_state.viewing_clients.lock().await;
 
-                            tokio::spawn(async move {
-                                println!("Video streaming task started");
-                                // Use a more precise interval for frame timing
-                                let mut interval = interval(Duration::from_millis(33)); // 30 FPS
-                                let mut stream_rx = stream_rx;
+                                    // Add client to viewing list
+                                    viewing_clients.insert(client_id.clone());
+                                    *is_viewing.lock().await = true;
+                                    println!("Client {} added to viewing list. Total viewers: {}", client_id, viewing_clients.len());
 
-                                // Pre-allocate reusable buffers
-                                let mut frame = Mat::default();
-                                let mut buf = Vector::new();
-                                let mut encode_params = Vector::new();
-                                encode_params.push(imgcodecs::IMWRITE_JPEG_QUALITY);
-                                encode_params.push(75); // Reduce quality for better performance
+                                    if viewing_clients.len() == 1 {
+                                        // Create a new channel for the video task
+                                        let (_video_tx, _video_rx) = mpsc::channel::<VideoCommand>(10);
 
-                                // Track frame timing
-                                let mut last_frame_time = std::time::Instant::now();
+                                        // Start video task if first viewer
+                                        let state = state.clone();
+                                        let broadcast_tx = video_state.broadcast_tx.clone();
+                                        let tx_for_video = tx.clone(); // Clone for video task
+                                        video_task = Some(tokio::spawn(async move {
+                                            println!("Video streaming task started");
+                                            let mut interval = interval(Duration::from_millis(33));
 
-                                loop {
-                                    interval.tick().await;
-
-                                    let (is_streaming, camera_index) = *stream_rx.borrow();
-                                    if !is_streaming {
-                                        if stream_rx.changed().await.is_err() {
-                                            println!("Stream channel closed");
-                                            break;
-                                        }
-                                        continue;
-                                    }
-
-                                    // Skip frame if we're behind
-                                    if last_frame_time.elapsed() < Duration::from_millis(30) {
-                                        continue;
-                                    }
-
-                                    let mut camera_guard = state.eyes.eyes_io.lock().await;
-                                    if camera_guard.is_none() {
-                                        if let Some(index) = camera_index {
-                                            println!("Initializing camera with index: {}", index);
                                             let io = match state.os_type.as_str() {
                                                 "Linux" => videoio::CAP_V4L2,
                                                 "Windows" => videoio::CAP_WINRT,
@@ -143,153 +123,112 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
                                                 _ => videoio::CAP_ANY,
                                             };
 
-                                            match videoio::VideoCapture::new(index, io) {
+                                            let mut camera = match videoio::VideoCapture::new(index, io) {
                                                 Ok(cap) => {
                                                     if cap.is_opened().unwrap_or(false) {
                                                         println!("Camera initialized successfully");
+                                                        let mut camera_guard = state.eyes.eyes_io.lock().await;
                                                         *camera_guard = Some(cap);
                                                         *state.current_camera_index.lock().await = Some(index);
+                                                        let _ = tx_for_video.send(VideoCommand::Error("Video stream started".to_string())).await;
+                                                        camera_guard.take().unwrap()
                                                     } else {
                                                         println!("Failed to open camera");
-                                                        let _ = tx.send(VideoCommand::Error("Failed to open camera".to_string())).await;
-                                                        let _ = stream_tx_clone.send((false, None));
-                                                        continue;
+                                                        let _ = tx_for_video.send(VideoCommand::Error("Failed to open camera".to_string())).await;
+                                                        return;
                                                     }
                                                 },
                                                 Err(e) => {
                                                     println!("Error creating camera: {:?}", e);
-                                                    let _ = tx.send(VideoCommand::Error("Failed to create camera".to_string())).await;
-                                                    let _ = stream_tx_clone.send((false, None));
+                                                    let _ = tx_for_video.send(VideoCommand::Error("Failed to create camera".to_string())).await;
+                                                    return;
+                                                }
+                                            };
+
+                                            let mut frame = Mat::default();
+                                            let mut buf = Vector::new();
+                                            let mut encode_params = Vector::new();
+                                            encode_params.push(imgcodecs::IMWRITE_JPEG_QUALITY);
+                                            encode_params.push(75);
+
+                                            let mut last_frame_time = std::time::Instant::now();
+
+                                            loop {
+                                                interval.tick().await;
+
+                                                if last_frame_time.elapsed() < Duration::from_millis(30) {
                                                     continue;
                                                 }
-                                            }
-                                        } else {
-                                            let _ = tx.send(VideoCommand::Error("No camera index specified".to_string())).await;
-                                            let _ = stream_tx_clone.send((false, None));
-                                            continue;
-                                        }
-                                    }
 
-                                    if let Some(ref mut camera) = *camera_guard {
-                                        match camera.read(&mut frame) {
-                                            Ok(true) => {
-                                                // Clear buffer before reuse
-                                                buf.clear();
-
-                                                if imgcodecs::imencode(".jpg", &frame, &mut buf, &encode_params).unwrap_or(false) {
-                                                    // Use try_send to implement backpressure
-                                                    match tx.try_send(VideoCommand::Frame(buf.to_vec())) {
-                                                        Ok(_) => {
+                                                match camera.read(&mut frame) {
+                                                    Ok(true) => {
+                                                        buf.clear();
+                                                        if imgcodecs::imencode(".jpg", &frame, &mut buf, &encode_params).unwrap_or(false) {
+                                                            if broadcast_tx.send(VideoCommand::Frame(buf.to_vec())).is_err() {
+                                                                println!("Failed to broadcast frame");
+                                                                break;
+                                                            }
                                                             last_frame_time = std::time::Instant::now();
-                                                        },
-                                                        Err(mpsc::error::TrySendError::Full(_)) => {
-                                                            // Skip frame if channel is full
-                                                            continue;
-                                                        },
-                                                        Err(_) => break,
-                                                    }
+                                                        }
+                                                    },
+                                                    Ok(false) => {
+                                                        println!("Failed to read frame");
+                                                        tokio::time::sleep(Duration::from_millis(10)).await;
+                                                    },
+                                                    Err(e) => {
+                                                        println!("Error reading frame: {:?}", e);
+                                                        tokio::time::sleep(Duration::from_millis(10)).await;
+                                                    },
                                                 }
-                                            },
-                                            Ok(false) => {
-                                                println!("Failed to read frame");
-                                                tokio::time::sleep(Duration::from_millis(10)).await;
-                                            },
-                                            Err(e) => {
-                                                println!("Error reading frame: {:?}", e);
-                                                tokio::time::sleep(Duration::from_millis(10)).await;
-                                            },
-                                        }
-                                    }
 
-                                    let (is_streaming, _) = *stream_rx.borrow();
-                                    if !is_streaming {
-                                        println!("Streaming disabled, releasing camera");
-                                        if let Some(ref mut camera) = *camera_guard {
+                                                let viewing_count = state.video_state.viewing_clients.lock().await.len();
+                                                if viewing_count == 0 {
+                                                    println!("No viewers remaining, stopping stream");
+                                                    break;
+                                                }
+                                            }
+
+                                            // Cleanup camera
                                             let _ = camera.release();
-                                        }
-                                        *camera_guard = None;
-                                        *state.current_camera_index.lock().await = None;
-                                    }
-                                }
-                                println!("Video streaming task ended");
-                            })
-                        });
-
-                        let _ = tx.send(VideoCommand::Error("Authenticated".to_string())).await;
-                    } else {
-                        println!("Authentication failed");
-                        let _ = tx.send(VideoCommand::Error("Unauthorized".to_string())).await;
-                        break;
-                    }
-                    continue;
-                }
-
-                // Rest of the control message handling remains the same...
-                if let Ok(control_msg) = serde_json::from_str::<ControlMessage>(&text) {
-                    if control_msg.message_type == "control" {
-                        match control_msg.action.as_str() {
-                            "on" => {
-                                println!("Received ON command with index {:?}", control_msg.index);
-                                if let Some(index) = control_msg.index {
-                                    let camera_guard = state.eyes.eyes_io.lock().await;
-                                    let mut status_guard = state.eyes.status.lock().await;
-
-                                    if *status_guard {
-                                        if camera_guard.is_some() {
-                                            let _ = tx.send(VideoCommand::Error(
-                                                "Turn off the current eyes before selecting a new one".to_string()
-                                            )).await;
-                                            continue;
-                                        }
-                                    }
-
-                                    if state.current_camera_index.lock().await.is_none() {
-                                        let _ = stream_tx.send((true, Some(index)));
-                                        *status_guard = true;
-                                        let _ = tx.send(VideoCommand::Error(
-                                            "Video stream started".to_string()
-                                        )).await;
+                                            let mut camera_guard = state.eyes.eyes_io.lock().await;
+                                            *camera_guard = None;
+                                            *state.current_camera_index.lock().await = None;
+                                            println!("Video streaming task ended");
+                                        }));
                                     } else {
-                                        let _ = tx.send(VideoCommand::Error(
-                                            "Eyes are already running".to_string()
+                                        let _ = tx_for_handler.send(VideoCommand::Error(
+                                            "Joined existing stream".to_string()
                                         )).await;
                                     }
-                                } else {
-                                    let _ = tx.send(VideoCommand::Error(
-                                        "Select the right eyes number".to_string()
-                                    )).await;
                                 }
                             }
                             "off" => {
-                                println!("Received OFF command");
-                                let mut camera_guard = state.eyes.eyes_io.lock().await;
-                                *state.eyes.status.lock().await = false;
+                                println!("Received OFF command from client {}", client_id);
+                                let mut viewing_clients = video_state.viewing_clients.lock().await;
 
-                                if camera_guard.is_some() {
-                                    let _ = stream_tx.send((false, None));
-                                    camera_guard.as_mut().unwrap().release().unwrap();
-                                    *camera_guard = None;
-                                    *state.current_camera_index.lock().await = None;
-                                    let _ = tx.send(VideoCommand::Error(
-                                        "Eyes turned off".to_string()
-                                    )).await;
+                                // Remove client from viewing list
+                                viewing_clients.remove(&client_id);
+                                *is_viewing.lock().await = false;
+                                println!("Client {} removed from viewing list. Remaining viewers: {}", client_id, viewing_clients.len());
+
+                                if viewing_clients.is_empty() {
+                                    *state.eyes.status.lock().await = false;
+                                    let _ = tx_for_handler.send(VideoCommand::Error("Eyes turned off".to_string())).await;
                                 } else {
-                                    let _ = tx.send(VideoCommand::Error(
-                                        "Eyes are not turned off correctly".to_string()
+                                    let _ = tx_for_handler.send(VideoCommand::Error(
+                                        "Stopped viewing. Other clients are still viewing.".to_string()
                                     )).await;
                                 }
                             }
                             _ => {
-                                let _ = tx.send(VideoCommand::Error("Invalid action".to_string())).await;
+                                let _ = tx_for_handler.send(VideoCommand::Error("Invalid action".to_string())).await;
                             }
                         }
                     }
-                } else {
-                    let _ = tx.send(VideoCommand::Error("Invalid message format".to_string())).await;
                 }
             }
             Message::Close(_) => {
-                println!("Received close message");
+                println!("Received close message from client {}", client_id);
                 break;
             }
             _ => continue,
@@ -297,25 +236,15 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
     }
 
     // Cleanup
-    println!("Cleaning up websocket handler");
-    let _ = stream_tx.send((false, None));
-    if let Some(task) = video_task {
-        task.abort();
-    }
+    println!("Cleaning up websocket handler for client {}", client_id);
+
+    // Remove from both authenticated and viewing clients
+    video_state.authenticated_clients.lock().await.remove(&client_id);
+    video_state.viewing_clients.lock().await.remove(&client_id);
+
     sender_task.abort();
-
-    let mut camera_guard = state.eyes.eyes_io.lock().await;
-    if let Some(ref mut camera) = *camera_guard {
-        let _ = camera.release();
-    }
-    *camera_guard = None;
-    *state.current_camera_index.lock().await = None;
-
-    println!("Video websocket handler terminated");
+    println!("Video websocket handler terminated for client {}", client_id);
 }
-
-
-
 
 pub async fn handle_audio_socket(socket: WebSocket) {
     println!("New audio WebSocket connection established");
@@ -467,7 +396,7 @@ fn setup_audio_stream(
                 move |err| {
                     eprintln!("Error in audio stream: {:?}", err);
                 },
-                Some(Duration::from_millis(10000))
+                Some(Duration::from_millis(10000)),
             ).map_err(|e| format!("Failed to build input stream: {:?}", e))?;
 
             stream.play().map_err(|e| format!("Failed to play stream: {:?}", e))?;
@@ -477,7 +406,7 @@ fn setup_audio_stream(
                 stream: Arc::new(stream),
                 stop_signal,
             })
-        },
+        }
         format => Err(format!("Unsupported sample format: {:?}", format))
     }
 }

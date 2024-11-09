@@ -18,6 +18,7 @@ futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 crossbeam-channel = "0.5.13"
+uuid = {version =  "1.11.0", features = ["v4"] }
 
 [[bin]]
 name = "monitor-system"
