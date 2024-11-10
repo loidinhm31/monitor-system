@@ -7,16 +7,25 @@ use tokio::sync::{broadcast, Mutex as TokioMutex};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub(crate) eyes: Arc<EyesState>,
-    pub(crate) current_camera_index: Arc<TokioMutex<Option<i32>>>,
-    pub(crate) os_type: String,
-    pub(crate) video_state: Arc<VideoState>,
+    pub eyes: Arc<EyesState>,
+    pub current_camera_index: Arc<TokioMutex<Option<i32>>>,
+    pub os_type: String,
+    pub video_state: Arc<VideoState>,
 }
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CameraStatus {
+    Available,
+    InUse,
+}
+
 
 #[derive(Serialize, Deserialize)]
 pub struct EyeInfo {
     pub index: i32,
     pub name: String,
+    pub status: CameraStatus,
 }
 
 pub struct EyesState {
@@ -30,12 +39,6 @@ pub struct SystemInfo {
     pub os_type: String,
     pub os_release: String,
     pub eyes: Vec<EyeInfo>,
-}
-
-#[derive(Deserialize)]
-pub struct EyeRequest {
-    pub action: String,
-    pub index: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,18 +63,17 @@ pub enum AudioCommand {
 }
 
 pub struct AudioStreamHandle {
-    pub(crate) stream: Arc<Stream>,
-    pub(crate) stop_signal: Arc<Mutex<bool>>,
+    pub stream: Arc<Stream>,
+    pub stop_signal: Arc<Mutex<bool>>,
 }
 
 unsafe impl Send for AudioStreamHandle {}
 
 
-
 pub struct VideoState {
-    pub(crate) broadcast_tx: broadcast::Sender<VideoCommand>,
-    pub(crate) authenticated_clients: Arc<TokioMutex<HashSet<String>>>,
-    pub(crate) viewing_clients: Arc<TokioMutex<HashSet<String>>>,
+    pub broadcast_tx: broadcast::Sender<VideoCommand>,
+    pub authenticated_clients: Arc<TokioMutex<HashSet<String>>>,
+    pub viewing_clients: Arc<TokioMutex<HashSet<String>>>,
 }
 
 impl VideoState {
@@ -87,7 +89,7 @@ impl VideoState {
 
 
 pub struct AudioState {
-    pub(crate) is_authenticated: bool,
+    pub is_authenticated: bool,
 }
 
 impl AudioState {

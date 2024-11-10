@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use opencv::{prelude::*, videoio};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tower_http::cors::{Any, CorsLayer};
@@ -14,7 +15,7 @@ mod auth;
 mod r#trait;
 mod websocket;
 
-use crate::r#trait::{AppState, EyeInfo, EyesState, SystemInfo, VideoState};
+use crate::r#trait::{AppState, CameraStatus, EyeInfo, EyesState, SystemInfo, VideoState};
 use crate::websocket::{handle_audio_socket, handle_video_socket};
 
 
@@ -47,17 +48,47 @@ async fn get_system_info(
     };
 
     let mut cameras = vec![];
+    let current_camera = state.current_camera_index.lock().await.clone();
+    let mut checked_ports = HashSet::new();
+
+    // First, add the currently used camera if any
+    if let Some(index) = current_camera {
+        cameras.push(EyeInfo {
+            index,
+            name: format!("Camera {} (in use)", index),
+            status: CameraStatus::InUse,
+        });
+        checked_ports.insert(index);
+    }
+
+    // Then check other available cameras
     for i in 0..10 {
-        if let Ok(mut cap) = videoio::VideoCapture::new(i, io) {
-            if cap.is_opened().unwrap() {
-                cameras.push(EyeInfo {
-                    index: i,
-                    name: format!("Camera {}", i),
-                });
-                cap.release().unwrap();
+        if checked_ports.contains(&i) {
+            continue;
+        }
+
+        // Create a temporary capture to check availability
+        match videoio::VideoCapture::new(i, io) {
+            Ok(mut cap) => {
+                if cap.is_opened().unwrap_or(false) {
+                    cameras.push(EyeInfo {
+                        index: i,
+                        name: format!("Camera {}", i),
+                        status: CameraStatus::Available,
+                    });
+                    // Make sure to release the capture immediately
+                    let _ = cap.release();
+                }
+            },
+            Err(_) => {
+                // Skip unavailable cameras
+                continue;
             }
         }
     }
+
+    // Sort cameras by index for consistent ordering
+    cameras.sort_by_key(|c| c.index);
 
     Json(SystemInfo {
         os_type: state.os_type.clone(),
@@ -105,3 +136,4 @@ async fn main() {
     println!("Server running at http://0.0.0.0:8081");
     axum::serve(listener, app).await.unwrap();
 }
+
