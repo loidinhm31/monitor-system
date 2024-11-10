@@ -23,7 +23,7 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
 
     let client_id = uuid::Uuid::new_v4().to_string();
     let client_id_for_sender = client_id.clone();
-    let mut video_task: Option<JoinHandle<()>> = None;
+    let mut _video_task: Option<JoinHandle<()>> = None;
     let is_authenticated = Arc::new(TokioMutex::new(false));
     let is_authenticated_sender = is_authenticated.clone();
     let is_viewing = Arc::new(TokioMutex::new(false));
@@ -112,7 +112,7 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
                                         let state = state.clone();
                                         let broadcast_tx = video_state.broadcast_tx.clone();
                                         let tx_for_video = tx.clone(); // Clone for video task
-                                        video_task = Some(tokio::spawn(async move {
+                                        _video_task = Some(tokio::spawn(async move {
                                             println!("Video streaming task started");
                                             let mut interval = interval(Duration::from_millis(33));
 
@@ -162,7 +162,9 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
 
                                                 match camera.read(&mut frame) {
                                                     Ok(true) => {
+                                                        // Clear buffer before reuse
                                                         buf.clear();
+
                                                         if imgcodecs::imencode(".jpg", &frame, &mut buf, &encode_params).unwrap_or(false) {
                                                             if broadcast_tx.send(VideoCommand::Frame(buf.to_vec())).is_err() {
                                                                 println!("Failed to broadcast frame");
@@ -342,7 +344,7 @@ pub async fn handle_audio_socket(socket: WebSocket) {
                 }
             }
             Message::Close(_) => break,
-            _ => (),
+            _ => {}
         }
     }
 
