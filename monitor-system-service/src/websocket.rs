@@ -1,15 +1,116 @@
 use crate::auth::authenticate_basic;
 use crate::r#trait::{AppState, AudioCommand, AudioState, AudioStreamHandle, ControlMessage, VideoCommand};
 use axum::extract::ws::{Message, WebSocket};
-use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, SampleFormat};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use futures::{SinkExt, StreamExt};
 use opencv::{core::{Mat, Vector}, imgcodecs, prelude::*, videoio};
+use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
-const BUFFER_SIZE: usize = 1024;
+const SAMPLE_RATE: u32 = 44100;
+const CHANNELS: u16 = 2;
+const BUFFER_SIZE: usize = 2048; // Smaller chunks for lower latency
+const LATENCY_MS: u64 = 30;
+
+fn write_wav_header(file: &mut std::fs::File, data_len: u32) -> std::io::Result<()> {
+    // RIFF header
+    file.write_all(b"RIFF")?;
+    file.write_all(&(data_len + 36).to_le_bytes())?; // File size - 8
+    file.write_all(b"WAVE")?;
+
+    // fmt chunk
+    file.write_all(b"fmt ")?;
+    file.write_all(&(16u32).to_le_bytes())?; // Chunk size
+    file.write_all(&(1u16).to_le_bytes())?;  // Audio format (PCM)
+    file.write_all(&(CHANNELS).to_le_bytes())?;
+    file.write_all(&(SAMPLE_RATE).to_le_bytes())?;
+    file.write_all(&(SAMPLE_RATE * CHANNELS as u32 * 2).to_le_bytes())?; // Byte rate
+    file.write_all(&(CHANNELS * 2).to_le_bytes())?; // Block align
+    file.write_all(&(16u16).to_le_bytes())?; // Bits per sample
+
+    // data chunk
+    file.write_all(b"data")?;
+    file.write_all(&data_len.to_le_bytes())?;
+
+    Ok(())
+}
+
+pub fn test_audio_capture() -> Result<(), String> {
+    println!("Starting direct audio capture test...");
+
+    let host = cpal::default_host();
+    let device = host.default_input_device()
+        .ok_or_else(|| "No input device available".to_string())?;
+
+    println!("Using input device: {}", device.name().unwrap_or_default());
+
+    let config = cpal::StreamConfig {
+        channels: CHANNELS,
+        sample_rate: cpal::SampleRate(SAMPLE_RATE),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    println!("Testing with config: {:?}", config);
+
+    // Create temporary file for raw data first
+    let temp_file = std::fs::File::create("temp_audio.raw")
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let temp_file = Arc::new(Mutex::new(temp_file));
+
+    let stream = device.build_input_stream(
+        &config,
+        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            let file = temp_file.clone();
+            let mut file = file.lock().unwrap();
+            for &sample in data {
+                let scaled = (sample * 32768.0) as i16;
+                file.write_all(&scaled.to_le_bytes()).unwrap();
+            }
+        },
+        move |err| eprintln!("Error in audio stream: {:?}", err),
+        Some(Duration::from_millis(5000)), // 5 second test duration
+    ).map_err(|e| format!("Failed to build input stream: {:?}", e))?;
+
+    println!("Recording for 5 seconds...");
+    stream.play().map_err(|e| format!("Failed to play stream: {:?}", e))?;
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Now create the final WAV file
+    let raw_data = std::fs::read("temp_audio.raw")
+        .map_err(|e| format!("Failed to read temp file: {}", e))?;
+    let data_len = raw_data.len() as u32;
+
+    let mut wav_file = std::fs::File::create("test_audio.wav")
+        .map_err(|e| format!("Failed to create WAV file: {}", e))?;
+
+    write_wav_header(&mut wav_file, data_len)
+        .map_err(|e| format!("Failed to write WAV header: {}", e))?;
+
+    wav_file.write_all(&raw_data)
+        .map_err(|e| format!("Failed to write audio data: {}", e))?;
+
+    // Clean up temp file
+    std::fs::remove_file("temp_audio.raw")
+        .map_err(|e| format!("Failed to remove temp file: {}", e))?;
+
+    println!("Audio recording completed and saved as 'test_audio.wav'");
+    println!("\nYou can play the audio file using any of these commands:");
+    println!("1. Using ffplay (if installed):");
+    println!("   ffplay test_audio.wav");
+    println!("\n2. Using aplay:");
+    println!("   aplay test_audio.wav");
+    println!("\n3. Using sox play command (if installed):");
+    println!("   play test_audio.wav");
+    println!("\nIf the audio is too quiet or loud, you can adjust volume with sox:");
+    println!("   sox test_audio.wav louder.wav vol 2.0");
+    println!("   play louder.wav");
+
+    Ok(())
+}
 
 pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
     println!("New video websocket connection established");
@@ -249,22 +350,30 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
 }
 
 pub async fn handle_audio_socket(socket: WebSocket) {
-    println!("New audio WebSocket connection established");
+    println!("[WS] New audio WebSocket connection established");
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = mpsc::channel::<AudioCommand>(4);
-    let ws_tx = tx.clone();
+    let (tx, mut rx) = mpsc::channel::<AudioCommand>(32); // Increased channel size
 
     let audio_state = Arc::new(TokioMutex::new(AudioState::new()));
     let stream_handle = Arc::new(TokioMutex::new(None));
-    let audio_buffer = Arc::new(Mutex::new(Vec::new()));
+    let audio_buffer = Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
 
+    // Flag to control audio streaming
+    let is_streaming = Arc::new(AtomicBool::new(false));
+    let is_streaming_sender = is_streaming.clone();
+
+    // Sender task
     let sender_handle = tokio::spawn(async move {
-        println!("Starting WebSocket sender task");
+        println!("[WS] Starting sender task");
         while let Some(cmd) = rx.recv().await {
-            // match &cmd {
-            //     AudioCommand::Data(data) => println!("Sending audio data: {} bytes", data.len()),
-            //     AudioCommand::Text(text) => println!("Sending text message: {}", text),
-            // }
+            match &cmd {
+                AudioCommand::Data(data) => {
+                    if data.len() > 0 {
+                        println!("[WS] Sending audio chunk: {} bytes", data.len());
+                    }
+                }
+                AudioCommand::Text(text) => println!("[WS] Sending text: {}", text),
+            }
 
             let msg = match cmd {
                 AudioCommand::Data(data) => Message::Binary(data),
@@ -272,17 +381,20 @@ pub async fn handle_audio_socket(socket: WebSocket) {
             };
 
             if let Err(e) = ws_sender.send(msg).await {
-                println!("Failed to send WebSocket message: {:?}", e);
+                println!("[WS] Failed to send message: {:?}", e);
                 break;
             }
         }
+        println!("[WS] Sender task ended");
     });
 
+    // Message handling loop
     while let Some(Ok(msg)) = ws_receiver.next().await {
         match msg {
             Message::Text(text) => {
-                println!("Received text message: {}", text);
+                println!("[WS] Received text: {}", text);
                 let mut state = audio_state.lock().await;
+
                 if !state.is_authenticated {
                     if authenticate_basic(&text).is_ok() {
                         state.is_authenticated = true;
@@ -296,58 +408,71 @@ pub async fn handle_audio_socket(socket: WebSocket) {
                 } else {
                     match text.as_str() {
                         "start_audio" => {
-                            println!("Starting audio capture...");
-                            let mut handle = stream_handle.lock().await;
-                            if handle.is_none() {
-                                let ws_tx = ws_tx.clone();
-                                let audio_buffer = Arc::clone(&audio_buffer);
+                            if !is_streaming.load(Ordering::SeqCst) {
+                                println!("[AUDIO] Starting audio stream");
+                                let mut handle = stream_handle.lock().await;
 
-                                // Create a crossbeam channel for audio data
-                                let (audio_sender, audio_receiver) = crossbeam_channel::bounded(32);
+                                if handle.is_none() {
+                                    let (audio_sender, audio_receiver) = crossbeam_channel::bounded(32);
 
-                                // Spawn a Tokio task to forward audio data to WebSocket
-                                let forward_task = {
-                                    let ws_tx = ws_tx.clone();
-                                    tokio::spawn(async move {
-                                        while let Ok(data) = audio_receiver.recv() {
-                                            if let Err(e) = ws_tx.send(AudioCommand::Data(data)).await {
-                                                println!("Failed to send audio data: {:?}", e);
-                                                break;
+                                    // Audio forwarding task
+                                    let forward_task = {
+                                        let tx = tx.clone();
+                                        let is_streaming = is_streaming_sender.clone();
+                                        tokio::spawn(async move {
+                                            println!("[AUDIO] Starting forward task");
+                                            while let Ok(data) = audio_receiver.recv() {
+                                                if !is_streaming.load(Ordering::SeqCst) {
+                                                    println!("[AUDIO] Streaming stopped, ending forward task");
+                                                    break;
+                                                }
+                                                if let Err(e) = tx.send(AudioCommand::Data(data)).await {
+                                                    println!("[AUDIO] Forward task error: {:?}", e);
+                                                    break;
+                                                }
                                             }
-                                        }
-                                    })
-                                };
+                                            println!("[AUDIO] Forward task ended");
+                                        })
+                                    };
 
-                                match setup_audio_stream(audio_buffer, audio_sender) {
-                                    Ok(new_handle) => {
-                                        println!("Audio stream setup successful");
-                                        *handle = Some(new_handle);
-                                        let _ = tx.send(AudioCommand::Text("Audio started".to_string())).await;
-                                    }
-                                    Err(e) => {
-                                        println!("Failed to setup audio stream: {}", e);
-                                        let _ = tx.send(AudioCommand::Text(format!("Failed to start audio: {}", e))).await;
-                                        forward_task.abort();
+                                    match setup_audio_stream(audio_buffer.clone(), audio_sender.clone()) {
+                                        Ok(new_handle) => {
+                                            *handle = Some(new_handle);
+                                            is_streaming.store(true, Ordering::SeqCst);
+                                            let _ = tx.send(AudioCommand::Text("Audio started".to_string())).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AudioCommand::Text(format!("Failed to start audio: {}", e))).await;
+                                            forward_task.abort();
+                                        }
                                     }
                                 }
                             }
                         }
                         "stop_audio" => {
+                            println!("[AUDIO] Stopping audio stream");
+                            is_streaming.store(false, Ordering::SeqCst);
                             let mut handle = stream_handle.lock().await;
                             if let Some(h) = handle.take() {
                                 stop_audio_stream(h);
                                 let _ = tx.send(AudioCommand::Text("Audio stopped".to_string())).await;
                             }
                         }
-                        _ => (),
+                        _ => println!("[WS] Unknown command: {}", text),
                     }
                 }
             }
-            Message::Close(_) => break,
+            Message::Close(_) => {
+                println!("[WS] Received close message");
+                break;
+            }
             _ => {}
         }
     }
 
+    // Cleanup
+    println!("[WS] Cleaning up connection");
+    is_streaming.store(false, Ordering::SeqCst);
     let mut handle = stream_handle.lock().await;
     if let Some(h) = handle.take() {
         stop_audio_stream(h);
@@ -358,63 +483,98 @@ pub async fn handle_audio_socket(socket: WebSocket) {
 fn setup_audio_stream(
     audio_buffer: Arc<Mutex<Vec<u8>>>,
     audio_sender: crossbeam_channel::Sender<Vec<u8>>,
-) -> Result<AudioStreamHandle, String>
-{
+) -> Result<AudioStreamHandle, String> {
     let host = cpal::default_host();
+
+    // Get default input device
     let device = host.default_input_device()
         .ok_or_else(|| "No input device available".to_string())?;
 
-    println!("Using input device: {}", device.name().unwrap_or_default());
+    println!("[AUDIO] Using device: {}", device.name().unwrap_or_default());
 
-    let config = device.default_input_config()
-        .map_err(|e| format!("Default config error: {:?}", e))?;
+    // Use explicit config
+    let config = cpal::StreamConfig {
+        channels: CHANNELS,
+        sample_rate: cpal::SampleRate(SAMPLE_RATE),
+        buffer_size: cpal::BufferSize::Fixed(BUFFER_SIZE as u32),
+    };
 
-    println!("Using default config: {:?}", config);
+    println!("[AUDIO] Stream config: {:?}", config);
 
     let stop_signal = Arc::new(Mutex::new(false));
     let stop_signal_clone = stop_signal.clone();
 
-    match config.sample_format() {
-        SampleFormat::F32 => {
-            let stream = device.build_input_stream(
-                &config.into(),
-                move |data: &[f32], _| {
-                    if *stop_signal_clone.lock().unwrap() {
-                        return;
+    // Ring buffer for audio processing
+    let ring_buffer = Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE * 2)));
+    let ring_buffer_clone = ring_buffer.clone();
+
+    let stream = device.build_input_stream(
+        &config,
+        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            if *stop_signal_clone.lock().unwrap() {
+                return;
+            }
+
+            let mut buffer = ring_buffer_clone.lock().unwrap();
+
+            // Convert samples with noise gate and normalization
+            let mut max_amplitude = 0.0f32;
+            let mut has_audio = false;
+
+            let audio_data: Vec<u8> = data.iter()
+                .map(|&sample| {
+                    // Update max amplitude
+                    max_amplitude = max_amplitude.max(sample.abs());
+
+                    // Apply noise gate
+                    let gated = if sample.abs() < 0.01 { 0.0 } else { sample };
+                    if gated != 0.0 {
+                        has_audio = true;
                     }
 
-                    let audio_data: Vec<u8> = data.iter()
-                        .flat_map(|&sample| sample.to_ne_bytes().to_vec())
-                        .collect();
+                    // Convert to i16
+                    let normalized = if max_amplitude > 1.0 {
+                        gated / max_amplitude
+                    } else {
+                        gated
+                    };
 
-                    let mut buffer = audio_buffer.lock().unwrap();
-                    buffer.extend(audio_data);
+                    let scaled = (normalized * 32767.0) as i16;
+                    scaled.to_le_bytes()
+                })
+                .flatten()
+                .collect();
 
-                    if buffer.len() >= BUFFER_SIZE {
-                        let data_to_send = buffer.split_off(0);
-                        let _ = audio_sender.try_send(data_to_send);
+            // Only send if we have actual audio
+            if has_audio {
+                buffer.extend(audio_data);
+
+                // Send when we have enough data
+                if buffer.len() >= BUFFER_SIZE {
+                    let data_to_send = buffer.split_off(0);
+                    if let Err(e) = audio_sender.try_send(data_to_send) {
+                        eprintln!("[AUDIO] Send error: {:?}", e);
                     }
-                },
-                move |err| {
-                    eprintln!("Error in audio stream: {:?}", err);
-                },
-                Some(Duration::from_millis(10000)),
-            ).map_err(|e| format!("Failed to build input stream: {:?}", e))?;
+                }
+            }
+        },
+        move |err| eprintln!("[AUDIO] Stream error: {:?}", err),
+        Some(Duration::from_millis(LATENCY_MS)),
+    ).map_err(|e| format!("Failed to build input stream: {:?}", e))?;
 
-            stream.play().map_err(|e| format!("Failed to play stream: {:?}", e))?;
-            println!("Audio stream started successfully");
+    stream.play().map_err(|e| format!("Failed to start stream: {:?}", e))?;
+    println!("[AUDIO] Stream started successfully");
 
-            Ok(AudioStreamHandle {
-                stream: Arc::new(stream),
-                stop_signal,
-            })
-        }
-        format => Err(format!("Unsupported sample format: {:?}", format))
-    }
+    Ok(AudioStreamHandle {
+        stream: Arc::new(stream),
+        stop_signal,
+    })
 }
 
 fn stop_audio_stream(handle: AudioStreamHandle) {
-    println!("Stopping audio stream");
+    println!("[AUDIO] Stopping stream");
     *handle.stop_signal.lock().unwrap() = true;
-    handle.stream.pause().unwrap_or_else(|e| eprintln!("Error stopping stream: {:?}", e));
+    if let Err(e) = handle.stream.pause() {
+        println!("[AUDIO] Error stopping stream: {:?}", e);
+    }
 }
