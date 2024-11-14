@@ -57,3 +57,5 @@ pcm.!default {
 ```shell
 docker exec -it <container_name> /bin/sh
 ```
+
+make up_build PLATFORM=amd64

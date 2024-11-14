@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/monitor-system-service/Cargo.toml" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="15caafe6-6439-418d-b949-043e5a3b72e6" name="Changes" comment="Test file audio and improve audio stream">
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/.cargo/config.toml" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/.cargo/config.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/auth.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/auth.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/websocket.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/websocket.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/project/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/docker/Dockerfile.amd64" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker/Dockerfile.amd64" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/docker/Dockerfile.arm64" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker/Dockerfile.arm64" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:dev" />
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="ygrmj10h" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="2h3VvoLYICtQkahlNJDJ6P5IUuC" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Run monitor-system.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;//wsl.localhost/Ubuntu/home/ubuntu-dev/ws/monitor-system&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;language.rust&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/monitor-system-service/src/websocket" />
+      <recent name="$PROJECT_DIR$/monitor-system-service" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Cargo.Run monitor-system">
+    <configuration name="Run monitor-system" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="run --package monitor-system --bin monitor-system" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test monitor-system" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="test --workspace" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$PROJECT_DIR$/../../.cargo/bin" />
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="15caafe6-6439-418d-b949-043e5a3b72e6" name="Changes" comment="" />
+      <created>1716822980945</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1716822980945</updated>
+      <workItem from="1716822981986" duration="3970000" />
+      <workItem from="1716828663990" duration="176000" />
+      <workItem from="1717267346051" duration="103000" />
+      <workItem from="1717268085800" duration="1459000" />
+      <workItem from="1717270053653" duration="2177000" />
+      <workItem from="1727772353969" duration="7555000" />
+      <workItem from="1727791257426" duration="92000" />
+      <workItem from="1727875722600" duration="247000" />
+      <workItem from="1727875978350" duration="5925000" />
+      <workItem from="1731028165840" duration="15364000" />
+      <workItem from="1731051130476" duration="29948000" />
+      <workItem from="1731135604680" duration="14664000" />
+      <workItem from="1731207068072" duration="19670000" />
+      <workItem from="1731348783909" duration="188000" />
+      <workItem from="1731503763114" duration="17000" />
+      <workItem from="1731610689786" duration="3128000" />
+      <workItem from="1731644572040" duration="525000" />
+      <workItem from="1731665130490" duration="1613000" />
+      <workItem from="1731729651254" duration="40000" />
+      <workItem from="1731834112099" duration="47000" />
+    </task>
+    <task id="LOCAL-00001" summary="Split socket for audio and video">
+      <option name="closed" value="true" />
+      <created>1716828527396</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1716828527396</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Try to improve audio">
+      <option name="closed" value="true" />
+      <created>1717267435852</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1717267435852</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Try to improve audio">
+      <option name="closed" value="true" />
+      <created>1717268858689</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1717268858689</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Add docker">
+      <option name="closed" value="true" />
+      <created>1727876033758</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1727876033758</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Refactor unused code">
+      <option name="closed" value="true" />
+      <created>1730894416186</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1730894416186</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Docker build for multi-platform">
+      <option name="closed" value="true" />
+      <created>1730977258551</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1730977258551</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Fix make file args">
+      <option name="closed" value="true" />
+      <created>1731046737778</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1731046737778</updated>
+    </task>
+    <task id="LOCAL-00008" summary="Try with axum">
+      <option name="closed" value="true" />
+      <created>1731149643789</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1731149643789</updated>
+    </task>
+    <task id="LOCAL-00009" summary="Handle multiple connection to videoio">
+      <option name="closed" value="true" />
+      <created>1731180857019</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1731180857019</updated>
+    </task>
+    <task id="LOCAL-00010" summary="Handle multiple connection to videoio">
+      <option name="closed" value="true" />
+      <created>1731234123874</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1731234123874</updated>
+    </task>
+    <task id="LOCAL-00011" summary="Handle share information for get system info">
+      <option name="closed" value="true" />
+      <created>1731260717176</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1731260717176</updated>
+    </task>
+    <task id="LOCAL-00012" summary="Test file audio and improve audio stream">
+      <option name="closed" value="true" />
+      <created>1731348956498</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1731348956498</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Split socket for audio and video" />
+    <MESSAGE value="Try to improve audio" />
+    <MESSAGE value="Add docker" />
+    <MESSAGE value="Refactor unused code" />
+    <MESSAGE value="Docker build for multi-platform" />
+    <MESSAGE value="Fix make file args" />
+    <MESSAGE value="Try with axum" />
+    <MESSAGE value="Handle multiple connection to videoio" />
+    <MESSAGE value="Handle share information for get system info" />
+    <MESSAGE value="Test file audio and improve audio stream" />
+    <option name="LAST_COMMIT_MESSAGE" value="Test file audio and improve audio stream" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/monitor-system-service1/src/auth.rs</url>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>

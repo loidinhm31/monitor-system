@@ -3,7 +3,7 @@ PLATFORM ?= amd64
 
 # Docker image names
 IMAGE_NAME = monitor-system
-amd64_TAG = ubuntu-22.04
+AMD64_TAG = ubuntu-22.04
 ARM64_TAG = bookworm-arm64
 
 # Dockerfile paths
@@ -61,14 +61,9 @@ clean:
 ## build_monitor_system: build the monitor system binary for the target platform
 build_monitor_system: check_platform
 	@echo "Building monitor-system binary for $(PLATFORM)..."
-	@if [ "$(PLATFORM)" = "arm64" ]; then \
-		cd ../monitor-system-service && \
-		rustup target add $(CARGO_TARGET) && \
-		cargo build --release --target $(CARGO_TARGET); \
-	else \
-		cd ../monitor-system-service && \
-		cargo build --release; \
-	fi
+	cd ../monitor-system-service && \
+    rustup target add $(CARGO_TARGET) && \
+    cargo build --release --target $(CARGO_TARGET)
 	@echo "Done!"
 
 ## build_image: build the Docker image for the target platform

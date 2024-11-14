@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 ENV LANG en_US.utf8
 
 # Copy the compiled binary from the builder stage
-COPY target/release/monitor-system /app/monitor-system
+COPY target/x86_64-unknown-linux-gnu/release/monitor-system /app/monitor-system
 
 # Make the binary executable
 RUN chmod +x /app/monitor-system
