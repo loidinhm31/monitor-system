@@ -8,20 +8,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="15caafe6-6439-418d-b949-043e5a3b72e6" name="Changes" comment="Test file audio and improve audio stream">
-      <change afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/.cargo/config.toml" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/.cargo/config.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/monitor-system-service/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/auth.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/auth.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/websocket.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/websocket.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/project/Makefile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker-compose.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/docker/Dockerfile.amd64" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker/Dockerfile.amd64" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/docker/Dockerfile.arm64" beforeDir="false" afterPath="$PROJECT_DIR$/project/docker/Dockerfile.arm64" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,6 +26,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="SOFT" />
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="ygrmj10h" />
@@ -145,6 +134,8 @@
       <workItem from="1731665130490" duration="1613000" />
       <workItem from="1731729651254" duration="40000" />
       <workItem from="1731834112099" duration="47000" />
+      <workItem from="1731834306100" duration="222000" />
+      <workItem from="1732142462512" duration="615000" />
     </task>
     <task id="LOCAL-00001" summary="Split socket for audio and video">
       <option name="closed" value="true" />
