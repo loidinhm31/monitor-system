@@ -224,10 +224,24 @@ pub async fn handle_video_socket(socket: WebSocket, state: AppState) {
                                                 _ => videoio::CAP_ANY,
                                             };
 
+
                                             let mut camera = match videoio::VideoCapture::new(index, io) {
-                                                Ok(cap) => {
+                                                Ok(mut cap) => {
+
                                                     if cap.is_opened().unwrap_or(false) {
                                                         println!("Camera initialized successfully");
+
+                                                        if io == videoio::CAP_V4L2 {
+                                                            // Set V4L2 buffer size
+                                                            cap.set(videoio::CAP_PROP_BUFFERSIZE, 3.0).unwrap();
+
+                                                            // Set timeout
+                                                            cap.set(videoio::CAP_PROP_FOURCC, videoio::VideoWriter::fourcc('M','J','P','G').unwrap() as f64).unwrap();
+
+                                                            // Set frame rate
+                                                            cap.set(videoio::CAP_PROP_FPS, 30.0).unwrap();
+                                                        }
+
                                                         let mut camera_guard = state.eyes.eyes_io.lock().await;
                                                         *camera_guard = Some(cap);
                                                         *state.current_camera_index.lock().await = Some(index);
