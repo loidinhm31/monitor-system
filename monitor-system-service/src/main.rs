@@ -1,22 +1,26 @@
+use crate::handlers::camera::{handle_video_socket, Users};
+use crate::handlers::system_info::get_system_info;
 use axum::{
     extract::{State, WebSocketUpgrade},
     response::IntoResponse,
-    routing::get,
-    Json, Router,
+    routing::get
+    , Router,
 };
-use opencv::{prelude::*, videoio};
-use std::collections::HashSet;
+use opencv::prelude::*;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
 mod r#trait;
 mod websocket;
+mod handlers;
+mod processor;
 
-use crate::r#trait::{AppState, CameraStatus, EyeInfo, EyesState, SystemInfo, VideoState};
-use crate::websocket::{handle_audio_socket, handle_video_socket};
+use crate::r#trait::{AppState, EyesState, VideoState};
+use crate::websocket::handle_audio_socket;
 
 
 async fn healthcheck() -> &'static str {
@@ -36,67 +40,6 @@ async fn audio_websocket_handler(
     ws.on_upgrade(handle_audio_socket)
 }
 
-
-async fn get_system_info(
-    State(state): State<AppState>,
-) -> Json<SystemInfo> {
-    let io = match state.os_type.as_str() {
-        "Linux" => videoio::CAP_V4L2,
-        "Windows" => videoio::CAP_WINRT,
-        "Darwin" => videoio::CAP_AVFOUNDATION,
-        _ => videoio::CAP_ANY,
-    };
-
-    let mut cameras = vec![];
-    let current_camera = state.current_camera_index.lock().await.clone();
-    let mut checked_ports = HashSet::new();
-
-    // First, add the currently used camera if any
-    if let Some(index) = current_camera {
-        cameras.push(EyeInfo {
-            index,
-            name: format!("Camera {} (in use)", index),
-            status: CameraStatus::InUse,
-        });
-        checked_ports.insert(index);
-    }
-
-    // Then check other available cameras
-    for i in 0..10 {
-        if checked_ports.contains(&i) {
-            continue;
-        }
-
-        // Create a temporary capture to check availability
-        match videoio::VideoCapture::new(i, io) {
-            Ok(mut cap) => {
-                if cap.is_opened().unwrap_or(false) {
-                    cameras.push(EyeInfo {
-                        index: i,
-                        name: format!("Camera {}", i),
-                        status: CameraStatus::Available,
-                    });
-                    // Make sure to release the capture immediately
-                    let _ = cap.release();
-                }
-            },
-            Err(_) => {
-                // Skip unavailable cameras
-                continue;
-            }
-        }
-    }
-
-    // Sort cameras by index for consistent ordering
-    cameras.sort_by_key(|c| c.index);
-
-    Json(SystemInfo {
-        os_type: state.os_type.clone(),
-        os_release: sys_info::os_release().unwrap_or_else(|_| "Unknown".to_string()),
-        eyes: cameras,
-    })
-}
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
@@ -105,6 +48,8 @@ async fn main() {
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    let users: Users = Arc::new(RwLock::new(HashMap::new()));
 
     let os_type = sys_info::os_type().unwrap();
     let eyes = EyesState {
@@ -117,6 +62,7 @@ async fn main() {
         current_camera_index: Arc::new(TokioMutex::new(None)),
         os_type,
         video_state: Arc::new(VideoState::new()),
+        user_sate: users.clone()
     };
 
     let cors = CorsLayer::new()
@@ -126,7 +72,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthcheck))
-        .route("/sensors/eyes/ws", get(video_websocket_handler))
+        .route("/ws", get(video_websocket_handler))
         .route("/sensors/ears/ws", get(audio_websocket_handler))
         .route("/system", get(get_system_info))
         .layer(cors)
