@@ -2,7 +2,6 @@ sudo v4l2-ctl --list-devices
 
 sudo chmod 777 /dev/video0
 
-cargo install cross
 
 sudo apt-get install libclang-dev
 sudo apt-get install libopencv-dev
@@ -59,3 +58,44 @@ docker exec -it <container_name> /bin/sh
 ```
 
 make up_build PLATFORM=amd64
+
+
+# For WSL2
+```shell
+uname -r
+VERSION=5.15.167.4
+  694  sudo git clone -b linux-msft-wsl-${VERSION} https://github.com/microsoft/WSL2-Linux-Kernel.git ${VERSION}-microsoft-standard && cd ${VERSION}-microsoft-standard
+
+  698  sudo cp /proc/config.gz config.gz
+ 
+  699  sudo gunzip config.gz
+
+  701  sudo mv config .config
+  
+  702  sudo make menuconfig
+  
+  703  sudo make -j$(nproc)
+  
+  704  sudo make modules_install -j$(nproc)
+  
+  705  sudo make install -j$(nproc)
+  
+  708  sudo mkdir /mnt/c/Sources
+  709  sudo cp vmlinux /mnt/c/Sources/
+```
+
+
+Get the WSL2 IP address:
+```shell
+ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1
+```
+
+Set up port forwarding from Windows to WSL2.
+```shell
+netsh interface portproxy add v4tov4 listenport=8081 listenaddress=0.0.0.0 connectport=8081 connectaddress=<WSL2_IP>
+```
+
+Verify the port forwarding:
+```shell
+netsh interface portproxy show all
+```

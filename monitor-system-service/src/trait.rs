@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use cpal::Stream;
 use tokio::sync::{broadcast, Mutex as TokioMutex};
+use crate::handlers::camera::Users;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -11,6 +12,7 @@ pub struct AppState {
     pub current_camera_index: Arc<TokioMutex<Option<i32>>>,
     pub os_type: String,
     pub video_state: Arc<VideoState>,
+    pub user_sate: Users
 }
 
 #[derive(Serialize, Deserialize)]

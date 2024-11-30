@@ -7,9 +7,18 @@
     <cargoProject FILE="$PROJECT_DIR$/monitor-system-service/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="15caafe6-6439-418d-b949-043e5a3b72e6" name="Changes" comment="Test file audio and improve audio stream">
+    <list default="true" id="15caafe6-6439-418d-b949-043e5a3b72e6" name="Changes" comment="Test">
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/src/handlers/camera.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/src/handlers/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/src/handlers/system_info.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/src/processor/camera.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/monitor-system-service/src/processor/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monitor-system-service/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" beforeDir="false" afterPath="$PROJECT_DIR$/monitor-system-service/src/trait.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -20,6 +29,7 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
+        <option value="JavaScript File" />
         <option value="Rust File" />
       </list>
     </option>
@@ -28,6 +38,18 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="RESET_MODE" value="SOFT" />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;loidinhm31&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;git@github.com:loidinhm31/monitor-system.git&quot;,
+    &quot;accountId&quot;: &quot;08285663-83f9-4ff5-aaa7-fd726d04e833&quot;
+  }
+}</component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="ygrmj10h" />
   </component>
@@ -43,9 +65,10 @@
   &quot;keyToString&quot;: {
     &quot;Cargo.Run monitor-system.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;//wsl.localhost/Ubuntu/home/ubuntu-dev/ws/monitor-system&quot;,
+    &quot;last_opened_file_path&quot;: &quot;//wsl.localhost/Ubuntu/home/ubuntu-dev/ws/webrtc_app&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -63,6 +86,7 @@
       <recent name="$PROJECT_DIR$" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="\\wsl.localhost\Ubuntu\home\ubuntu-dev\ws\monitor-system\monitor-system-service\static\js" />
       <recent name="$PROJECT_DIR$/monitor-system-service/src/websocket" />
       <recent name="$PROJECT_DIR$/monitor-system-service" />
     </key>
@@ -135,7 +159,20 @@
       <workItem from="1731729651254" duration="40000" />
       <workItem from="1731834112099" duration="47000" />
       <workItem from="1731834306100" duration="222000" />
-      <workItem from="1732142462512" duration="615000" />
+      <workItem from="1732142462512" duration="1324000" />
+      <workItem from="1732720269962" duration="6580000" />
+      <workItem from="1732732805988" duration="389000" />
+      <workItem from="1732736861844" duration="15882000" />
+      <workItem from="1732776623028" duration="4735000" />
+      <workItem from="1732787912755" duration="479000" />
+      <workItem from="1732788636682" duration="1609000" />
+      <workItem from="1732790374057" duration="18684000" />
+      <workItem from="1732888002370" duration="4437000" />
+      <workItem from="1732893728562" duration="466000" />
+      <workItem from="1732894232369" duration="3498000" />
+      <workItem from="1732898229988" duration="1942000" />
+      <workItem from="1732900817431" duration="12125000" />
+      <workItem from="1732937718075" duration="5011000" />
     </task>
     <task id="LOCAL-00001" summary="Split socket for audio and video">
       <option name="closed" value="true" />
@@ -233,7 +270,31 @@
       <option name="project" value="LOCAL" />
       <updated>1731348956498</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="Add gitignore">
+      <option name="closed" value="true" />
+      <created>1732144136042</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1732144136042</updated>
+    </task>
+    <task id="LOCAL-00014" summary="Check for V4L2 on WSL2">
+      <option name="closed" value="true" />
+      <created>1732759400862</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1732759400862</updated>
+    </task>
+    <task id="LOCAL-00015" summary="Test">
+      <option name="closed" value="true" />
+      <created>1732766946603</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1732766946603</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -261,7 +322,10 @@
     <MESSAGE value="Handle multiple connection to videoio" />
     <MESSAGE value="Handle share information for get system info" />
     <MESSAGE value="Test file audio and improve audio stream" />
-    <option name="LAST_COMMIT_MESSAGE" value="Test file audio and improve audio stream" />
+    <MESSAGE value="Add gitignore" />
+    <MESSAGE value="Check for V4L2 on WSL2" />
+    <MESSAGE value="Test" />
+    <option name="LAST_COMMIT_MESSAGE" value="Test" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
