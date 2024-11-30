@@ -1,10 +1,9 @@
-use std::collections::HashSet;
-use std::sync::Arc;
+use crate::r#trait::{AppState, CameraStatus, EyeInfo, SystemInfo};
 use axum::extract::State;
 use axum::Json;
 use opencv::videoio;
 use opencv::videoio::{VideoCaptureTrait, VideoCaptureTraitConst};
-use crate::r#trait::{AppState, CameraStatus, EyeInfo, SystemInfo};
+use std::collections::HashSet;
 
 pub async fn get_system_info(
     State(state): State<AppState>,

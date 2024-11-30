@@ -4,38 +4,45 @@ use opencv::{
     core,
     Result,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
+#[derive(Debug)]
+pub enum CameraControl {
+    Start,
+    Stop,
+}
 
 pub struct CameraServer {
     frame_sender: mpsc::UnboundedSender<String>,
+    stop_rx: watch::Receiver<bool>,
+    running: watch::Receiver<bool>,
 }
 
 impl CameraServer {
-    pub fn new(frame_sender: mpsc::UnboundedSender<String>) -> Self {
-        Self { frame_sender }
+    pub fn new(
+        frame_sender: mpsc::UnboundedSender<String>,
+        stop_rx: watch::Receiver<bool>,
+        running: watch::Receiver<bool>,
+    ) -> Self {
+        Self {
+            frame_sender,
+            stop_rx,
+            running,
+        }
     }
 
     fn configure_camera(cap: &mut videoio::VideoCapture) -> Result<()> {
-        // Set camera format to MJPEG if available (more efficient)
         let _ = cap.set(videoio::CAP_PROP_FOURCC,
                         videoio::VideoWriter::fourcc('M', 'J', 'P', 'G')? as f64);
 
-        // Lower resolution for better performance
         cap.set(videoio::CAP_PROP_FRAME_WIDTH, 320.0)?;
         cap.set(videoio::CAP_PROP_FRAME_HEIGHT, 240.0)?;
-
-        // Lower FPS for stability
         cap.set(videoio::CAP_PROP_FPS, 15.0)?;
-
-        // Minimal buffer size to reduce latency
         cap.set(videoio::CAP_PROP_BUFFERSIZE, 1.0)?;
-
-        // No auto exposure or focus (can cause timeouts)
-        let _ = cap.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0); // Manual exposure
-        let _ = cap.set(videoio::CAP_PROP_AUTOFOCUS, 0.0); // Manual focus
+        let _ = cap.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0);
+        let _ = cap.set(videoio::CAP_PROP_AUTOFOCUS, 0.0);
 
         Ok(())
     }
@@ -52,7 +59,6 @@ impl CameraServer {
 
         Self::configure_camera(&mut cap)?;
 
-        // Warm up the camera by reading a few frames
         let mut frame = core::Mat::default();
         for _ in 0..5 {
             cap.read(&mut frame)?;
@@ -68,7 +74,12 @@ impl CameraServer {
         let mut consecutive_failures = 0;
         const MAX_FAILURES: i32 = 3;
 
-        loop {
+        while *self.running.borrow() {
+            if *self.stop_rx.borrow() {
+                println!("Camera capture stopping due to stop signal");
+                break;
+            }
+
             let read_result = cam.read(&mut frame);
             match read_result {
                 Ok(true) => {
@@ -76,13 +87,12 @@ impl CameraServer {
                         println!("Empty frame received");
                         consecutive_failures += 1;
                     } else {
-                        consecutive_failures = 0; // Reset on success
+                        consecutive_failures = 0;
 
-                        // Convert frame to jpg with lower quality for better performance
                         let mut buffer = core::Vector::new();
                         let mut params = core::Vector::new();
                         params.push(opencv::imgcodecs::IMWRITE_JPEG_QUALITY);
-                        params.push(60); // Lower quality for better performance
+                        params.push(60);
 
                         if let Ok(_) = opencv::imgcodecs::imencode(".jpg", &frame, &mut buffer, &params) {
                             let frame_data = BASE64.encode(&buffer);
@@ -100,13 +110,11 @@ impl CameraServer {
             }
 
             if consecutive_failures >= MAX_FAILURES {
+                if *self.stop_rx.borrow() {
+                    break;
+                }
+
                 println!("Too many consecutive failures, reinitializing camera...");
-                // Close current camera explicitly
-                drop(cam);
-
-                // Wait before reopening
-                tokio::time::sleep(Duration::from_secs(2)).await;
-
                 match Self::try_open_camera() {
                     Ok(new_cam) => {
                         cam = new_cam;
@@ -120,10 +128,10 @@ impl CameraServer {
                 }
             }
 
-            // Longer delay between frames for stability
-            tokio::time::sleep(Duration::from_millis(66)).await; // ~15 FPS
+            tokio::time::sleep(Duration::from_millis(66)).await;
         }
 
+        println!("Camera capture ended");
         Ok(())
     }
 }

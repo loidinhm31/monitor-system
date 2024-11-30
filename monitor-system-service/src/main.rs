@@ -6,7 +6,6 @@ use axum::{
     routing::get
     , Router,
 };
-use opencv::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex as TokioMutex, RwLock};
